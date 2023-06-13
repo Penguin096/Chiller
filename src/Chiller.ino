@@ -323,7 +323,7 @@ void loop()
       Fan = false;
     }
 
-    if ((millis() - Comm_timeout) > 5000)
+    if ((millis() - Comm_timeout) > 3000)
     {
       reserved[0] |= COOLING_COMM_FAULT;
       Chiler_On = false;
