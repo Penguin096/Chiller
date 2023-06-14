@@ -1,5 +1,5 @@
 // OUTPUT: D3...D6
-// INPUT:  D7...D10
+// INPUT:  D7...D11
 // ANALOG: A0, A2
 
 // #define test
@@ -7,10 +7,12 @@
 #define Button 2
 #define Compressor 5
 #define FAN 3
-#define Valve_1_Hot 6
+// #define Valve_1_Hot 6
 #define Valve_2_Cold 4
-#define FS 10
+#define WL 10
+#define FS 11
 #define RS485_REDE 12
+#define PUMP 6
 
 // #define CansiderTemp A3
 #define DS_PIN A3 // пин для термометров
@@ -40,7 +42,7 @@
 #define COOLING_COMM_FAULT 0x01 << 6
 
 #define _TACHO_TICKS_AMOUNT 10 // количество тиков для счёта времени
-#define _TACHO_TIMEOUT 1000    // таймаут прерываний (мкс), после которого считаем что вращение прекратилось
+#define _TACHO_TIMEOUT 1000000 // таймаут прерываний (мкс), после которого считаем что вращение прекратилось
 
 #define USART_BAUDRATE 250000 // Desired Baud Rate
 #define BAUD_PRESCALER (((F_CPU / (USART_BAUDRATE * 16UL))) - 1)
@@ -120,22 +122,18 @@ uint8_t Fan3_Off;
 // шаги изменения температуры уставки 0.1
 int8_t step_a = 1;
 
-uint8_t reserved[4];
+uint8_t reserved[4] = {0, 50, 0, 0};
 
 volatile uint32_t tachoTime = 100000; // для плавного старта значений
 volatile uint32_t tachoTimer = micros();
-volatile int ticks = 0;
+volatile uint16_t ticks;
 volatile bool ready = false;
 uint32_t buf[3] = {100000, 100000, 100000}; // для плавного старта значений
 byte counter = 0;
-uint8_t hz = 0;
 
 float Power_Laser;
 
 volatile uint32_t Comm_timeout = micros();
-volatile uint8_t IncomArr[14];                                                                                       // входящий массив
-volatile uint8_t SendArr[14] = {0x72, 0x51, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF}; // исходящий массив
-volatile bool ReadOk;
 
 void USART_Init()
 {
@@ -163,18 +161,20 @@ void setup()
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(Compressor, OUTPUT);  // PWM //Relay
   pinMode(FAN, OUTPUT);         // PWM //FAN
-  pinMode(Valve_1_Hot, OUTPUT); // PWM //Valve
+  // pinMode(Valve_1_Hot, OUTPUT); // PWM //Valve
   pinMode(Valve_2_Cold, OUTPUT);
   pinMode(RS485_REDE, OUTPUT);
+  pinMode(PUMP, OUTPUT);
   digitalWrite(RS485_REDE, LOW);
 
   pinMode(Button, INPUT_PULLUP); // кнопка INT0
   pinMode(7, INPUT_PULLUP);      // FAN1
   pinMode(8, INPUT_PULLUP);      // FAN2
   pinMode(9, INPUT_PULLUP);      // FAN3
+  pinMode(WL, INPUT_PULLUP);     // WL
   pinMode(FS, INPUT_PULLUP);     // FS
 
-  PCICR |= (1 << PCIE0);     // прерывания для FS
+  //  PCICR |= (1 << PCIE0);     // прерывания для FS
   PCMSK0 |= (1 << (FS - 8)); // прерывания для FS
 
   ADCSRA |= (1 << ADEN); // set adc enable
@@ -205,7 +205,10 @@ void setup()
 
 ISR(USART_RX_vect) // Обрабатываем прерывание по поступлению байта
 {
-  static volatile uint8_t CountArr; // счетчик принятых байтов
+  static uint8_t CountArr;     // счетчик принятых байтов
+  static uint8_t IncomArr[14]; // входящий массив                                                                                      // входящий массив
+  static uint8_t SendArr[14];  // исходящий массив
+  static bool ReadOk;
 
   IncomArr[CountArr] = UDR0; // принимаем байт в массив
   if (IncomArr[0] == BUS_RET_COMMAND_HEAD && ReadOk == false)
@@ -214,7 +217,6 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
     if (CountArr == sizeof(IncomArr))
     { // если приняли все байты
       CountArr = 0;
-      // ReadOk = (IncomArr[1] == default_ID_COOLING && IncomArr[11] == tail && IncomArr[12] == tail && IncomArr[13] == tail) ? false : true;
       if ((IncomArr[1] == default_ID_COOLING) && (IncomArr[11] == tail) && (IncomArr[12] == tail) && (IncomArr[13] == tail))
         ReadOk = true;
 
@@ -250,7 +252,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
             SendArr[5] = Cansider_Temp & 0xff;
             SendArr[6] = Cansider_Temp >> 8;
             SendArr[7] = reserved[0];
-            SendArr[8] = reserved[1];
+            SendArr[8] = 50;//reserved[1];
             SendArr[9] = reserved[2];
             SendArr[10] = reserved[3];
             send = true;
@@ -270,11 +272,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
 
         if (send)
         {
-          //          digitalWrite(RS485_REDE, HIGH);
           PORTB |= (1 << PB4);
-          //          for (int i = 0; i < 200; i++) {
-          //            asm("NOP");
-          //          }
           for (uint8_t i = 0; i < sizeof(SendArr); i++)
           {
             while (!(UCSR0A & (1 << UDRE0)))
@@ -284,10 +282,10 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           }
           while (!(UCSR0A & (1 << UDRE0)))
             ; // ждем опустошения буфера
-          for (int i = 0; i < 200; i++) {
+          for (int i = 0; i < 1000; i++)
+          {
             asm("NOP");
           }
-          //          digitalWrite(RS485_REDE, LOW);
           PORTB &= ~(1 << PB4);
         }
 
@@ -302,22 +300,31 @@ ISR(PCINT0_vect)
   // tachoTime - время в мкс каждых _TACHO_TICKS_AMOUNT тиков
   if (bitRead(PINB, FS - 8))
   {
-    if (!ticks--)
-    {
-      ticks = _TACHO_TICKS_AMOUNT - 1;
-      tachoTime = micros() - tachoTimer;
-      tachoTimer += tachoTime; //== tachoTimer = micros();
-      ready = true;
-    }
+    //    if (!ticks--)
+    //    {
+    //      ticks = _TACHO_TICKS_AMOUNT - 1;
+    //      tachoTime = micros() - tachoTimer;
+    //      tachoTimer += tachoTime; //== tachoTimer = micros();
+    //      ready = true;
+    //    }
+    ticks++;
   }
 }
 
 void loop()
 {
-
   if ((millis() - time_10) > 1000)
   {
     time_10 = millis();
+
+    if (digitalRead(WL))
+    {
+      reserved[0] |= CL_WATER_LEVEL_ERR;
+    }
+    else
+    {
+      reserved[0] &= ~(CL_WATER_LEVEL_ERR);
+    }
 
     Wire.beginTransmission(0x27);
     if (Wire.endTransmission())
@@ -349,6 +356,8 @@ void loop()
       lcd.setCursor(0, 1);
       String Error;
       if (Freez_Temp)
+        Error = "Fan";
+      else if (Freez_Temp)
         Error = "Freez Temp";
       else if (LowPressure)
         Error = "Low Pressure";
@@ -362,8 +371,13 @@ void loop()
         Error = "Air overheat";
       else if (reserved[0] & CL_FLOW_LOW)
         Error = "Flow low";
+      else if (reserved[0] & CL_WATER_HEATING)
+        Error = "Pump ON";
+      else if (reserved[0] & CL_WATER_OFF)
+        Error = "Pump OFF";
       else if (reserved[0] & COOLING_COMM_FAULT)
         Error = "Comm fault";
+      else Error = "None";
       lcd.print(Error);
     }
     else
@@ -376,11 +390,14 @@ void loop()
       lcd.setCursor(10, 0);
       lcd.print(PressureTransducer);
       lcd.print("psi");
+      // lcd.setCursor(0, 1);
+      // lcd.print("T1:");
+      // lcd.print(Cansider_Temp / 10.0, 1);
+      // lcd.print(" T2:");
+      // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
       lcd.setCursor(0, 1);
-      lcd.print("T1:");
-      lcd.print(Cansider_Temp / 10.0, 1);
-      lcd.print(" T2:");
-      lcd.print(Fan_Ctrl_Temp / 10.0, 1);
+      lcd.print("F:");
+      lcd.print(reserved[1]);
     }
   }
 
@@ -390,12 +407,17 @@ void loop()
     if (Chiler_On)
     {
       Chiller_Switch = true;
+      digitalWrite(PUMP, HIGH);
       digitalWrite(Compressor, HIGH);
       reserved[0] &= ~(CL_WATER_OFF);
+      PCICR |= (1 << PCIE0);     // прерывания для FS
     }
     else
     {
+      PCICR &= ~(1 << PCIE0);     // прерывания выкл для FS
       digitalWrite(Compressor, LOW);
+      digitalWrite(PUMP, LOW);
+      reserved[0] &= ~(CL_FLOW_LOW);
       reserved[0] |= CL_WATER_OFF;
     }
     readTemp();
@@ -519,15 +541,24 @@ long median3(long value)
 
 uint8_t getHz()
 {
-  if (ready)
-  { // если готовы новые данные
-    ready = false;
-    if (tachoTime != 0)
-      hz = _TACHO_TICKS_AMOUNT * 1000000 / median3(tachoTime);
+  //  uint8_t hz = 0;
+  //  if (ready)
+  //  { // если готовы новые данные
+  //    ready = false;
+  //    if (tachoTime != 0)
+  //      hz = _TACHO_TICKS_AMOUNT * 1000000 / median3(tachoTime);
+  //  }
+  //  if ((micros() - tachoTimer) > _TACHO_TIMEOUT)
+  //    hz = 0;
+  //  return hz;
+  static uint8_t varResult;
+  static uint32_t varTime = millis();
+  if ((varTime + 1000) < millis() || varTime > millis()) {   // Если c момента последнего расчёта прошла 1 секунда, или произошло переполнение millis то ...
+    varResult = ticks;
+    ticks = 0;
+    varTime = millis();                      // Сбрасываем счётчик и сохраняем время расчёта
   }
-  if (micros() - tachoTimer > _TACHO_TIMEOUT)
-    hz = 0;
-  return hz;
+  return (varResult);
 }
 
 void Check_Pressure()
@@ -631,14 +662,20 @@ void Chiller_Protec()
   static uint8_t dm_45;
   static uint8_t dm_46;
   static uint8_t dm_47;
+  static uint8_t dm_48;
 
   reserved[1] = getHz();
-  if (reserved[1] < 220)
+  if (reserved[1] < 40)
   {
-    reserved[0] |= CL_FLOW_LOW;
+    dm_48++;
+    if (dm_48 > 1000)
+    {
+      reserved[0] |= CL_FLOW_LOW;
+    }
   }
   else
   {
+    dm_48 = 0;
     reserved[0] &= ~(CL_FLOW_LOW);
   }
 
@@ -731,30 +768,30 @@ void Control_Values()
     if (Cansider_Temp > Cansider_Sp)
     {
       digitalWrite(Valve_2_Cold, HIGH);
-      digitalWrite(Valve_1_Hot, LOW);
+      // digitalWrite(Valve_1_Hot, LOW);
     }
     else if (Cansider_Temp < uint16_t(Cansider_Sp - Cansider_Gb))
     {
       digitalWrite(Valve_2_Cold, LOW);
-      digitalWrite(Valve_1_Hot, HIGH);
+      // digitalWrite(Valve_1_Hot, HIGH);
     }
 #else
     regulator.input = Cansider_Temp; // сообщаем регулятору текущую температуру
     if (regulator.getResult())
     {
       digitalWrite(Valve_2_Cold, HIGH);
-      digitalWrite(Valve_1_Hot, LOW);
+      // digitalWrite(Valve_1_Hot, LOW);
     }
     else
     {
       digitalWrite(Valve_2_Cold, LOW);
-      digitalWrite(Valve_1_Hot, HIGH);
+      // digitalWrite(Valve_1_Hot, HIGH);
     }
 #endif
   }
   else
   {
-    digitalWrite(Valve_1_Hot, HIGH);
+    // digitalWrite(Valve_1_Hot, HIGH);
     digitalWrite(Valve_2_Cold, HIGH);
   }
 }
