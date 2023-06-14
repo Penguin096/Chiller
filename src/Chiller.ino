@@ -122,7 +122,7 @@ uint8_t Fan3_Off;
 // шаги изменения температуры уставки 0.1
 int8_t step_a = 1;
 
-uint8_t reserved[4] = {0, 50, 0, 0};
+volatile uint8_t reserved[4];
 
 volatile uint32_t tachoTime = 100000; // для плавного старта значений
 volatile uint32_t tachoTimer = micros();
@@ -159,8 +159,8 @@ void setup()
   //  TCCR2B = (TCCR2B & B11111000) | B00000110; //делитель 256 для
 
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(Compressor, OUTPUT);  // PWM //Relay
-  pinMode(FAN, OUTPUT);         // PWM //FAN
+  pinMode(Compressor, OUTPUT); // PWM //Relay
+  pinMode(FAN, OUTPUT);        // PWM //FAN
   // pinMode(Valve_1_Hot, OUTPUT); // PWM //Valve
   pinMode(Valve_2_Cold, OUTPUT);
   pinMode(RS485_REDE, OUTPUT);
@@ -231,40 +231,40 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
         SendArr[2] = IncomArr[2];
         switch (IncomArr[2])
         {
-          case WATER_ON:
-            SendArr[5] = 1;
-            send = true;
-            Chiler_On = true;
-            break;
-          case WATER_OFF:
-            Chiler_On = false;
-            break;
-          case CL_SET_TEMP:
-            Cansider_Sp = IncomArr[3];
-            break;
-          case CL_GET_SET_TEMP:
-            SendArr[5] = Cansider_Sp;
-            send = true;
-            break;
-          case CL_GET_STATUS:
-            SendArr[3] = Fan_Ctrl_Temp & 0xff;
-            SendArr[4] = Fan_Ctrl_Temp >> 8;
-            SendArr[5] = Cansider_Temp & 0xff;
-            SendArr[6] = Cansider_Temp >> 8;
-            SendArr[7] = reserved[0];
-            SendArr[8] = 50;//reserved[1];
-            SendArr[9] = reserved[2];
-            SendArr[10] = reserved[3];
-            send = true;
-            break;
-          case CL_PUMP_START:
-            Power_Laser = (IncomArr[3] ^ 3) * IncomArr[5] * IncomArr[7] / (40 ^ 2); // приблизительный расчет мощности лазера
-            break;
-          case CL_PUMP_STOP:
-            send = true;
-            break;
-          default:
-            return;
+        case WATER_ON:
+          SendArr[5] = 1;
+          send = true;
+          Chiler_On = true;
+          break;
+        case WATER_OFF:
+          Chiler_On = false;
+          break;
+        case CL_SET_TEMP:
+          Cansider_Sp = IncomArr[3];
+          break;
+        case CL_GET_SET_TEMP:
+          SendArr[5] = Cansider_Sp;
+          send = true;
+          break;
+        case CL_GET_STATUS:
+          SendArr[3] = Fan_Ctrl_Temp & 0xff;
+          SendArr[4] = Fan_Ctrl_Temp >> 8;
+          SendArr[5] = Cansider_Temp & 0xff;
+          SendArr[6] = Cansider_Temp >> 8;
+          SendArr[7] = reserved[0];
+          SendArr[8] = 50; // reserved[1];
+          SendArr[9] = reserved[2];
+          SendArr[10] = reserved[3];
+          send = true;
+          break;
+        case CL_PUMP_START:
+          Power_Laser = (IncomArr[3] ^ 3) * IncomArr[5] * IncomArr[7] / (40 ^ 2); // приблизительный расчет мощности лазера
+          break;
+        case CL_PUMP_STOP:
+          send = true;
+          break;
+        default:
+          return;
         }
         SendArr[11] = tail;
         SendArr[12] = tail;
@@ -307,7 +307,16 @@ ISR(PCINT0_vect)
     //      tachoTimer += tachoTime; //== tachoTimer = micros();
     //      ready = true;
     //    }
+    static uint32_t varTime = millis();
+
     ticks++;
+
+    if ((varTime + 1000) < millis() || varTime > millis())
+    { // Если c момента последнего расчёта прошла 1 секунда, или произошло переполнение millis то ...
+      reserved[1] = ticks;
+      ticks = 0;
+      varTime = millis(); // Сбрасываем счётчик и сохраняем время расчёта
+    }
   }
 }
 
@@ -377,7 +386,8 @@ void loop()
         Error = "Pump OFF";
       else if (reserved[0] & COOLING_COMM_FAULT)
         Error = "Comm fault";
-      else Error = "None";
+      else
+        Error = "None";
       lcd.print(Error);
     }
     else
@@ -390,12 +400,11 @@ void loop()
       lcd.setCursor(10, 0);
       lcd.print(PressureTransducer);
       lcd.print("psi");
-      // lcd.setCursor(0, 1);
-      // lcd.print("T1:");
-      // lcd.print(Cansider_Temp / 10.0, 1);
+      lcd.setCursor(0, 1);
+      lcd.print("T1:");
+      lcd.print(Cansider_Temp / 10.0, 1);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
-      lcd.setCursor(0, 1);
       lcd.print("F:");
       lcd.print(reserved[1]);
     }
@@ -410,11 +419,11 @@ void loop()
       digitalWrite(PUMP, HIGH);
       digitalWrite(Compressor, HIGH);
       reserved[0] &= ~(CL_WATER_OFF);
-      PCICR |= (1 << PCIE0);     // прерывания для FS
+      PCICR |= (1 << PCIE0); // прерывания для FS
     }
     else
     {
-      PCICR &= ~(1 << PCIE0);     // прерывания выкл для FS
+      PCICR &= ~(1 << PCIE0); // прерывания выкл для FS
       digitalWrite(Compressor, LOW);
       digitalWrite(PUMP, LOW);
       reserved[0] &= ~(CL_FLOW_LOW);
@@ -539,8 +548,8 @@ long median3(long value)
   }
 }
 
-uint8_t getHz()
-{
+// uint8_t getHz()
+// {
   //  uint8_t hz = 0;
   //  if (ready)
   //  { // если готовы новые данные
@@ -551,15 +560,15 @@ uint8_t getHz()
   //  if ((micros() - tachoTimer) > _TACHO_TIMEOUT)
   //    hz = 0;
   //  return hz;
-  static uint8_t varResult;
-  static uint32_t varTime = millis();
-  if ((varTime + 1000) < millis() || varTime > millis()) {   // Если c момента последнего расчёта прошла 1 секунда, или произошло переполнение millis то ...
-    varResult = ticks;
-    ticks = 0;
-    varTime = millis();                      // Сбрасываем счётчик и сохраняем время расчёта
-  }
-  return (varResult);
-}
+  // static uint8_t varResult;
+  // static uint32_t varTime = millis();
+  // if ((varTime + 1000) < millis() || varTime > millis()) {   // Если c момента последнего расчёта прошла 1 секунда, или произошло переполнение millis то ...
+  //   varResult = ticks;
+  //   ticks = 0;
+  //   varTime = millis();                      // Сбрасываем счётчик и сохраняем время расчёта
+  // }
+  // return (varResult);
+// }
 
 void Check_Pressure()
 {
@@ -664,11 +673,11 @@ void Chiller_Protec()
   static uint8_t dm_47;
   static uint8_t dm_48;
 
-  reserved[1] = getHz();
+  // reserved[1] = getHz();
   if (reserved[1] < 40)
   {
     dm_48++;
-    if (dm_48 > 1000)
+    if (dm_48 > 30)
     {
       reserved[0] |= CL_FLOW_LOW;
     }
