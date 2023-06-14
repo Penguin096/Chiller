@@ -133,6 +133,9 @@ uint8_t hz = 0;
 float Power_Laser;
 
 volatile uint32_t Comm_timeout = micros();
+volatile uint8_t IncomArr[14];                                                                                       // входящий массив
+volatile uint8_t SendArr[14] = {0x72, 0x51, 0x17, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xFF, 0xFF, 0xFF}; // исходящий массив
+volatile bool ReadOk;
 
 void USART_Init()
 {
@@ -202,11 +205,7 @@ void setup()
 
 ISR(USART_RX_vect) // Обрабатываем прерывание по поступлению байта
 {
-  static volatile uint8_t IncomArr[14]; // входящий массив
-  static volatile uint8_t SendArr[14];  // исходящий массив
-  static volatile uint8_t CountArr;     // счетчик принятых байтов
-  bool ReadOk;
-  bool send;
+  static volatile uint8_t CountArr; // счетчик принятых байтов
 
   IncomArr[CountArr] = UDR0; // принимаем байт в массив
   if (IncomArr[0] == BUS_RET_COMMAND_HEAD && ReadOk == false)
@@ -215,10 +214,14 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
     if (CountArr == sizeof(IncomArr))
     { // если приняли все байты
       CountArr = 0;
-      ReadOk = (IncomArr[1] == default_ID_COOLING && IncomArr[11] == tail && IncomArr[12] == tail && IncomArr[13] == tail) ? false : true;
+      // ReadOk = (IncomArr[1] == default_ID_COOLING && IncomArr[11] == tail && IncomArr[12] == tail && IncomArr[13] == tail) ? false : true;
+      if ((IncomArr[1] == default_ID_COOLING) && (IncomArr[11] == tail) && (IncomArr[12] == tail) && (IncomArr[13] == tail))
+        ReadOk = true;
+
       if (ReadOk)
       {
-        ReadOk = false;
+        bool send;
+
         Comm_timeout = millis();
 
         SendArr[0] = BUS_RET_COMMAND_HEAD;
@@ -226,40 +229,40 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
         SendArr[2] = IncomArr[2];
         switch (IncomArr[2])
         {
-        case WATER_ON:
-          SendArr[5] = 1;
-          send = true;
-          Chiler_On = true;
-          break;
-        case WATER_OFF:
-          Chiler_On = false;
-          break;
-        case CL_SET_TEMP:
-          Cansider_Sp = IncomArr[3];
-          break;
-        case CL_GET_SET_TEMP:
-          SendArr[5] = Cansider_Sp;
-          send = true;
-          break;
-        case CL_GET_STATUS:
-          SendArr[3] = Fan_Ctrl_Temp;
-          SendArr[4] = 0x00;
-          SendArr[5] = Cansider_Temp;
-          SendArr[6] = 0x00;
-          SendArr[7] = reserved[0];
-          SendArr[8] = reserved[1];
-          SendArr[9] = reserved[2];
-          SendArr[10] = reserved[3];
-          send = true;
-          break;
-        case CL_PUMP_START:
-          Power_Laser = (IncomArr[3] ^ 3) * IncomArr[5] * IncomArr[7] / (40 ^ 2); // приблизительный расчет мощности лазера
-          break;
-        case CL_PUMP_STOP:
-          send = true;
-          break;
-        default:
-          return;
+          case WATER_ON:
+            SendArr[5] = 1;
+            send = true;
+            Chiler_On = true;
+            break;
+          case WATER_OFF:
+            Chiler_On = false;
+            break;
+          case CL_SET_TEMP:
+            Cansider_Sp = IncomArr[3];
+            break;
+          case CL_GET_SET_TEMP:
+            SendArr[5] = Cansider_Sp;
+            send = true;
+            break;
+          case CL_GET_STATUS:
+            SendArr[3] = Fan_Ctrl_Temp & 0xff;
+            SendArr[4] = Fan_Ctrl_Temp >> 8;
+            SendArr[5] = Cansider_Temp & 0xff;
+            SendArr[6] = Cansider_Temp >> 8;
+            SendArr[7] = reserved[0];
+            SendArr[8] = reserved[1];
+            SendArr[9] = reserved[2];
+            SendArr[10] = reserved[3];
+            send = true;
+            break;
+          case CL_PUMP_START:
+            Power_Laser = (IncomArr[3] ^ 3) * IncomArr[5] * IncomArr[7] / (40 ^ 2); // приблизительный расчет мощности лазера
+            break;
+          case CL_PUMP_STOP:
+            send = true;
+            break;
+          default:
+            return;
         }
         SendArr[11] = tail;
         SendArr[12] = tail;
@@ -267,9 +270,11 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
 
         if (send)
         {
-          digitalWrite(RS485_REDE, HIGH);
-          // PORTB |= (1<<PB4);
-          delay(10);
+          //          digitalWrite(RS485_REDE, HIGH);
+          PORTB |= (1 << PB4);
+          //          for (int i = 0; i < 200; i++) {
+          //            asm("NOP");
+          //          }
           for (uint8_t i = 0; i < sizeof(SendArr); i++)
           {
             while (!(UCSR0A & (1 << UDRE0)))
@@ -279,9 +284,14 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           }
           while (!(UCSR0A & (1 << UDRE0)))
             ; // ждем опустошения буфера
-          digitalWrite(RS485_REDE, LOW);
-          // PORTB &= ~(1<<PB4);
+          for (int i = 0; i < 200; i++) {
+            asm("NOP");
+          }
+          //          digitalWrite(RS485_REDE, LOW);
+          PORTB &= ~(1 << PB4);
         }
+
+        ReadOk = false;
       }
     }
   }
@@ -381,10 +391,12 @@ void loop()
     {
       Chiller_Switch = true;
       digitalWrite(Compressor, HIGH);
+      reserved[0] &= ~(CL_WATER_OFF);
     }
     else
     {
       digitalWrite(Compressor, LOW);
+      reserved[0] |= CL_WATER_OFF;
     }
     readTemp();
     Control_Values();
@@ -524,6 +536,8 @@ void Check_Pressure()
   static uint8_t dm_91;
   static uint8_t dm_92;
   static uint8_t dm_93;
+
+  PressureTransducer = 0;
 
   //  + 2разряда
   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
@@ -747,6 +761,7 @@ void Control_Values()
 
 void readTemp()
 {
+  Cansider_Temp = 0;
 
   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
   {
@@ -757,7 +772,7 @@ void readTemp()
       ;                   // пока преобразование не готово - ждем
     Cansider_Temp += ADC; // FanTemp
   }
-  Cansider_Temp += Cansider_Temp >> 2;
+  Cansider_Temp = Cansider_Temp >> 2;
 
   Cansider_Temp = expRunningAverage(Cansider_Temp);
   Cansider_Temp = (Cansider_Temp / 4096.0 * 1.025 * 1000.0 + 10.0);
