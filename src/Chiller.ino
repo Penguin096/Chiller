@@ -90,7 +90,7 @@ MicroDS18B20<DS_PIN, cansiderThermometer> sensor2; // Создаем термо�
 // установка, гистерезис, направление регулирования
 GyverRelay regulator(NORMAL);
 
-uint8_t Cansider_Sp;      // Уставка
+volatile uint8_t Cansider_Sp;      // Уставка
 uint8_t Cansider_Gb = 10; // Гистерезис
 uint16_t Temp_Low_Power = 260;
 uint16_t Temp_High_Power = 300;
@@ -100,7 +100,7 @@ uint8_t Sp_Critical_Press_Pup = 50;
 uint8_t Sp_Low_Press = 20;
 uint8_t Sp_Critical_Press = 10;
 
-bool Chiler_On;
+volatile bool Chiler_On;
 bool Chiller_Switch;
 bool LowPressure;
 bool CriticalPressure;
@@ -124,14 +124,14 @@ int8_t step_a = 1;
 
 volatile uint8_t reserved[4];
 
-volatile uint32_t tachoTime = 100000; // для плавного старта значений
-volatile uint32_t tachoTimer = micros();
+// volatile uint32_t tachoTime = 100000; // для плавного старта значений
+// volatile uint32_t tachoTimer = micros();
 volatile uint16_t ticks;
-volatile bool ready = false;
-uint32_t buf[3] = {100000, 100000, 100000}; // для плавного старта значений
-byte counter = 0;
+// volatile bool ready = false;
+// uint32_t buf[3] = {100000, 100000, 100000}; // для плавного старта значений
+// byte counter = 0;
 
-float Power_Laser;
+volatile float Power_Laser;
 
 volatile uint32_t Comm_timeout = micros();
 
@@ -207,8 +207,9 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
 {
   static uint8_t CountArr;     // счетчик принятых байтов
   static uint8_t IncomArr[14]; // входящий массив                                                                                      // входящий массив
-  static uint8_t SendArr[14];  // исходящий массив
-  static bool ReadOk;
+  uint8_t SendArr[14];  // исходящий массив
+  bool ReadOk;
+  bool send;
 
   IncomArr[CountArr] = UDR0; // принимаем байт в массив
   if (IncomArr[0] == BUS_RET_COMMAND_HEAD && ReadOk == false)
@@ -222,8 +223,6 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
 
       if (ReadOk)
       {
-        bool send;
-
         Comm_timeout = millis();
 
         SendArr[0] = BUS_RET_COMMAND_HEAD;
@@ -279,7 +278,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
             while (!(UCSR0A & (1 << UDRE0)))
               ;                // ждем опустошения буфера
             UDR0 = SendArr[i]; // отправляем байт
-            SendArr[i] = 0;    // сразу же чистим переменную
+            // SendArr[i] = 0;    // сразу же чистим переменную
           }
           while (!(UCSR0A & (1 << UDRE0)))
             ; // ждем опустошения буфера
@@ -290,7 +289,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           PORTB &= ~(1 << PB4);
         }
 
-        ReadOk = false;
+        // ReadOk = false;
       }
     }
   }
@@ -532,22 +531,22 @@ float expRunningAverage2(float newVal)
   return filVal2;
 }
 
-// быстрая медиана
-long median3(long value)
-{
-  buf[counter] = value;
-  if (++counter > 2)
-    counter = 0;
-  if ((buf[0] <= buf[1]) && (buf[0] <= buf[2]))
-    return (buf[1] <= buf[2]) ? buf[1] : buf[2];
-  else
-  {
-    if ((buf[1] <= buf[0]) && (buf[1] <= buf[2]))
-      return (buf[0] <= buf[2]) ? buf[0] : buf[2];
-    else
-      return (buf[0] <= buf[1]) ? buf[0] : buf[1];
-  }
-}
+// // быстрая медиана
+// long median3(long value)
+// {
+//   buf[counter] = value;
+//   if (++counter > 2)
+//     counter = 0;
+//   if ((buf[0] <= buf[1]) && (buf[0] <= buf[2]))
+//     return (buf[1] <= buf[2]) ? buf[1] : buf[2];
+//   else
+//   {
+//     if ((buf[1] <= buf[0]) && (buf[1] <= buf[2]))
+//       return (buf[0] <= buf[2]) ? buf[0] : buf[2];
+//     else
+//       return (buf[0] <= buf[1]) ? buf[0] : buf[1];
+//   }
+// }
 
 // uint8_t getHz()
 // {
