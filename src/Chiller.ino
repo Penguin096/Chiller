@@ -240,10 +240,11 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           Chiler_On = false;
           break;
         case CL_SET_TEMP:
-          Cansider_Sp = IncomArr[3];
+          Cansider_Sp = (IncomArr[4] << 8) | IncomArr[3];
           break;
         case CL_GET_SET_TEMP:
-          SendArr[5] = Cansider_Sp;
+          SendArr[5] = Cansider_Sp & 0xff;
+          SendArr[6] = Cansider_Sp >> 8;
           send = true;
           break;
         case CL_GET_STATUS:
@@ -252,7 +253,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           SendArr[5] = Cansider_Temp & 0xff;
           SendArr[6] = Cansider_Temp >> 8;
           SendArr[7] = reserved[0];
-          SendArr[8] = 50; // reserved[1];
+          SendArr[8] = (reserved[1] > 30) ? reserved[1] : 30;
           SendArr[9] = reserved[2];
           SendArr[10] = reserved[3];
           send = true;
@@ -550,24 +551,24 @@ long median3(long value)
 
 // uint8_t getHz()
 // {
-  //  uint8_t hz = 0;
-  //  if (ready)
-  //  { // если готовы новые данные
-  //    ready = false;
-  //    if (tachoTime != 0)
-  //      hz = _TACHO_TICKS_AMOUNT * 1000000 / median3(tachoTime);
-  //  }
-  //  if ((micros() - tachoTimer) > _TACHO_TIMEOUT)
-  //    hz = 0;
-  //  return hz;
-  // static uint8_t varResult;
-  // static uint32_t varTime = millis();
-  // if ((varTime + 1000) < millis() || varTime > millis()) {   // Если c момента последнего расчёта прошла 1 секунда, или произошло переполнение millis то ...
-  //   varResult = ticks;
-  //   ticks = 0;
-  //   varTime = millis();                      // Сбрасываем счётчик и сохраняем время расчёта
-  // }
-  // return (varResult);
+//  uint8_t hz = 0;
+//  if (ready)
+//  { // если готовы новые данные
+//    ready = false;
+//    if (tachoTime != 0)
+//      hz = _TACHO_TICKS_AMOUNT * 1000000 / median3(tachoTime);
+//  }
+//  if ((micros() - tachoTimer) > _TACHO_TIMEOUT)
+//    hz = 0;
+//  return hz;
+// static uint8_t varResult;
+// static uint32_t varTime = millis();
+// if ((varTime + 1000) < millis() || varTime > millis()) {   // Если c момента последнего расчёта прошла 1 секунда, или произошло переполнение millis то ...
+//   varResult = ticks;
+//   ticks = 0;
+//   varTime = millis();                      // Сбрасываем счётчик и сохраняем время расчёта
+// }
+// return (varResult);
 // }
 
 void Check_Pressure()
