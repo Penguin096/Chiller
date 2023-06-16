@@ -86,12 +86,14 @@ byte fanThermometer[] = {0x28, 0x2F, 0x50, 0xFB, 0x0C, 0x00, 0x00, 0x47};
 MicroDS18B20<DS_PIN, fanThermometer> sensor1;      // Создаем термометр с адресацией
 MicroDS18B20<DS_PIN, cansiderThermometer> sensor2; // Создаем термометр с адресацией
 
+#ifdef test
 #include "GyverRelay.h"
 // установка, гистерезис, направление регулирования
 GyverRelay regulator(NORMAL);
+#endif
 
-volatile uint8_t Cansider_Sp;      // Уставка
-uint8_t Cansider_Gb = 10; // Гистерезис
+volatile uint8_t Cansider_Sp; // Уставка
+uint8_t Cansider_Gb = 10;     // Гистерезис
 uint16_t Temp_Low_Power = 260;
 uint16_t Temp_High_Power = 300;
 
@@ -124,16 +126,12 @@ int8_t step_a = 1;
 
 volatile uint8_t reserved[4];
 
-// volatile uint32_t tachoTime = 100000; // для плавного старта значений
-// volatile uint32_t tachoTimer = micros();
 volatile uint16_t ticks;
-// volatile bool ready = false;
-// uint32_t buf[3] = {100000, 100000, 100000}; // для плавного старта значений
-// byte counter = 0;
 
 volatile float Power_Laser;
 
 volatile uint32_t Comm_timeout = micros();
+volatile uint32_t varTime = millis();
 
 void USART_Init()
 {
@@ -206,8 +204,8 @@ void setup()
 ISR(USART_RX_vect) // Обрабатываем прерывание по поступлению байта
 {
   static uint8_t CountArr;     // счетчик принятых байтов
-  static uint8_t IncomArr[14]; // входящий массив                                                                                      // входящий массив
-  uint8_t SendArr[14];  // исходящий массив
+  static uint8_t IncomArr[14]; // входящий массив
+  uint8_t SendArr[14];         // исходящий массив
   bool ReadOk;
   bool send;
 
@@ -231,7 +229,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
         switch (IncomArr[2])
         {
         case WATER_ON:
-          SendArr[5] = 1;
+          SendArr[5] = Chiler_On;
           send = true;
           Chiler_On = true;
           break;
@@ -297,18 +295,8 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
 
 ISR(PCINT0_vect)
 {
-  // tachoTime - время в мкс каждых _TACHO_TICKS_AMOUNT тиков
   if (bitRead(PINB, FS - 8))
   {
-    //    if (!ticks--)
-    //    {
-    //      ticks = _TACHO_TICKS_AMOUNT - 1;
-    //      tachoTime = micros() - tachoTimer;
-    //      tachoTimer += tachoTime; //== tachoTimer = micros();
-    //      ready = true;
-    //    }
-    static uint32_t varTime = millis();
-
     ticks++;
 
     if ((varTime + 1000) < millis() || varTime > millis())
@@ -405,8 +393,9 @@ void loop()
       lcd.print(Cansider_Temp / 10.0, 1);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
-      lcd.print("F:");
-      lcd.print(reserved[1]);
+      lcd.setCursor(7, 1);
+      lcd.print("W:");
+      lcd.print(Power_Laser);
     }
   }
 
@@ -428,6 +417,7 @@ void loop()
       digitalWrite(PUMP, LOW);
       reserved[0] &= ~(CL_FLOW_LOW);
       reserved[0] |= CL_WATER_OFF;
+      LowPressure = false;
     }
     readTemp();
     Control_Values();
@@ -498,7 +488,9 @@ void loop()
     lcd.setCursor(0, 0);
     lcd.print("Set:");
     lcd.print(Cansider_Sp / 10.0, 1);
+#ifdef test
     regulator.setpoint = Cansider_Sp;
+#endif
   }
   // разворачиваем шаг для изменения в обратную сторону
   // передаём количество предварительных кликов
@@ -530,45 +522,6 @@ float expRunningAverage2(float newVal)
   filVal2 += (newVal - filVal2) * 0.5; // коэфф. фильтрации 0.5
   return filVal2;
 }
-
-// // быстрая медиана
-// long median3(long value)
-// {
-//   buf[counter] = value;
-//   if (++counter > 2)
-//     counter = 0;
-//   if ((buf[0] <= buf[1]) && (buf[0] <= buf[2]))
-//     return (buf[1] <= buf[2]) ? buf[1] : buf[2];
-//   else
-//   {
-//     if ((buf[1] <= buf[0]) && (buf[1] <= buf[2]))
-//       return (buf[0] <= buf[2]) ? buf[0] : buf[2];
-//     else
-//       return (buf[0] <= buf[1]) ? buf[0] : buf[1];
-//   }
-// }
-
-// uint8_t getHz()
-// {
-//  uint8_t hz = 0;
-//  if (ready)
-//  { // если готовы новые данные
-//    ready = false;
-//    if (tachoTime != 0)
-//      hz = _TACHO_TICKS_AMOUNT * 1000000 / median3(tachoTime);
-//  }
-//  if ((micros() - tachoTimer) > _TACHO_TIMEOUT)
-//    hz = 0;
-//  return hz;
-// static uint8_t varResult;
-// static uint32_t varTime = millis();
-// if ((varTime + 1000) < millis() || varTime > millis()) {   // Если c момента последнего расчёта прошла 1 секунда, или произошло переполнение millis то ...
-//   varResult = ticks;
-//   ticks = 0;
-//   varTime = millis();                      // Сбрасываем счётчик и сохраняем время расчёта
-// }
-// return (varResult);
-// }
 
 void Check_Pressure()
 {
@@ -673,11 +626,10 @@ void Chiller_Protec()
   static uint8_t dm_47;
   static uint8_t dm_48;
 
-  // reserved[1] = getHz();
-  if (reserved[1] < 40)
+  if ((reserved[1] < 40 || (millis() - varTime) > 1000) && !reserved[0])
   {
     dm_48++;
-    if (dm_48 > 30)
+    if (dm_48 > 10)
     {
       reserved[0] |= CL_FLOW_LOW;
     }
