@@ -1,0 +1,83 @@
+Работа идет запрос – ответ.  Запрашивает мастер (основанная плата) без запроса никто ничего не шлет в шину.  
+Запросом приходит команда (см описание) в ответ на нее посылается команда с той же структурой.
+
+RS485 settings:
+BaudRate = 250000;
+WordLength = UART_WORDLENGTH_8B;
+StopBits = UART_STOPBITS_1;
+Parity = UART_PARITY_NONE;
+
+Command format
+#define BUS_RET_COMMAND_HEAD                 (0x72)
+#define default_ID_COOLING    ((byte)0x51) //
+
+#pragma pack(1)
+typedef struct
+{
+   uint8_t head; //= BUS_RET_COMMAND_HEAD                 
+  uint8_t ID; // device ID  = default_ID_COOLING
+  uint8_t cmd_id; //command 
+  short set_val; // value to be set
+  short get_val; // real value 
+  uint8_t reserved[4]; // reserved for future use.
+  uint8_t tail[3];// =0xFF
+} command;
+
+
+// command id
+
+#define WATER_ON         (0x04)
+#define WATER_OFF            (0x05)
+#define CL_SET_TEMP       0x15
+#define CL_GET_SET_TEMP     0x16
+#define CL_GET_STATUS     0x17
+#define CL_PUMP_START      0x18 // start lamp
+#define CL_PUMP_STOP      0x19 // stop  lamp
+
+Fault code:
+#define CL_WATER_LEVEL_ERR    (0x01<<0)
+#define CL_WATER_OVERHEAT   (0x01<<1)
+#define CL_LAB_OVERHEAT     (0x01<<2)
+#define CL_FLOW_LOW       (0x01<<3)
+#define CL_WATER_HEATING    (0x01<<4)
+#define CL_WATER_OFF      (0x01<<5)
+#define COOLING_COMM_FAULT (0x01<<6)
+
+Статус нагревателя воды можно использовать в обратную сторону.
+#define WH_OFF  0
+#define WH_ON 1
+#define WH_DONE 2
+
+Параметры запросаПараметры ответаWATER_ON         get_val =1 запустилось
+ get_val =0  не запустилось
+WATER_OFF--CL_SET_TEMPset_val=Temp*10 (т.е для 25 градусов шлем 250)-CL_GET_SET_TEMP-get_val = Temp1_set*10CL_GET_STATUS-get_val = Temp1*10; - температура воды
+set_val = Temp2*10;  - температура воздуха
+reserved[0] = get_status();
+reserved[1] = get_freq();
+reserved[2] = get_fanspeed(); CL_PUMP_STARTfrequency=reserved[0];  //в Гц voltage_lamp=set_val; // в В
+pulse_width=get_val; // в мкс-CL_PUMP_STOP--
+get_freq(); - частота импульсов датчика протока. В Гц
+get_fanspeed  - скорость вентиляторов 0..100% . просто для индикации.  Можно забить
+get_status() ;
+
+/// возвращает такие значения:
+	if (get_level() < 3)
+		ret |= CL_WATER_LEVEL_ERR; // water level
+	if (Temp1 > Temp_max)
+		ret |= CL_WATER_OVERHEAT; // water temp max
+	if (Temp2 > Temp_lab_max)
+		ret |= CL_LAB_OVERHEAT; // water temp max
+	if (!waterflow_ok())
+		ret |= CL_FLOW_LOW;
+	if (water_heating())
+		ret |= CL_WATER_HEATING;
+	if (!water_pump_on())
+		ret |= CL_WATER_OFF;
+
+
+расчет мощности на лампе приблизительный :
+k0=40;
+voltage_lamp в В
+pulse_width   в с
+frequency   в Гц
+double power = (voltage_lamp^3) * pulse_width* frequency /(k0^2);
