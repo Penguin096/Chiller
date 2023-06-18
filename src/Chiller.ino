@@ -67,6 +67,7 @@
 #define RX_COMPLETE_INTERRUPT (1 << RXCIE0)
 
 #include <Arduino.h>
+#include <avr/wdt.h>
 
 #include <Wire.h>
 #include <LiquidCrystal_I2C.h>
@@ -153,6 +154,8 @@ void USART_Init()
 
 void setup()
 {
+  wdt_enable(WDTO_2S);
+
   TCCR2B = (TCCR2B & B11111000) | B00000101; // делитель 128 для (245 Гц)
   //  TCCR2B = (TCCR2B & B11111000) | B00000110; //делитель 256 для
 
@@ -310,6 +313,8 @@ ISR(PCINT0_vect)
 
 void loop()
 {
+  wdt_reset();
+
   if ((millis() - time_10) > 1000)
   {
     time_10 = millis();
