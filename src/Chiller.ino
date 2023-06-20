@@ -154,6 +154,7 @@ void USART_Init()
 
 void setup()
 {
+  wdt_reset();
   wdt_enable(WDTO_2S);
 
   TCCR2B = (TCCR2B & B11111000) | B00000101; // делитель 128 для (245 Гц)
@@ -199,7 +200,7 @@ void setup()
   regulator.hysteresis = 10;        // ширина гистерезиса 1 градус
   regulator.k = 0.5;                // коэффициент обратной связи (подбирается по факту)
 #endif
-
+  wdt_reset();
   delay(1000);
   lcd.clear();
 }
