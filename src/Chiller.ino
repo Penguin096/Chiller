@@ -260,7 +260,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           send = true;
           break;
         case CL_PUMP_START:
-          Power_Laser = ((short)((IncomArr[4] << 8) | IncomArr[3]) ^ 3) * (short)((IncomArr[6] << 8) | IncomArr[5]) * IncomArr[7] / (40 ^ 2); // приблизительный расчет мощности лазера
+          Power_Laser = pow((short)((IncomArr[4] << 8) | IncomArr[3]), 3) * (short)((IncomArr[6] << 8) | IncomArr[5]) * IncomArr[7] / pow(40, 2); // приблизительный расчет мощности лазера
           break;
         case CL_PUMP_STOP:
           send = true;
