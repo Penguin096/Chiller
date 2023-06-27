@@ -374,10 +374,10 @@ void loop()
         Error = "Air overheat";
       else if (reserved[0] & CL_FLOW_LOW)
         Error = "Flow low";
-      else if (reserved[0] & CL_WATER_HEATING)
-        Error = "Pump ON";
-      else if (reserved[0] & CL_WATER_OFF)
-        Error = "Pump OFF";
+      // else if (reserved[0] & CL_WATER_HEATING)
+      //   Error = "Pump ON";
+      //else if (reserved[0] & CL_WATER_OFF)
+      //   Error = "Pump OFF";
       else if (reserved[0] & COOLING_COMM_FAULT)
         Error = "Comm fault";
       else
@@ -395,8 +395,10 @@ void loop()
       lcd.print(PressureTransducer);
       lcd.print("psi");
       lcd.setCursor(0, 1);
-      lcd.print("T1:");
-      lcd.print(Cansider_Temp / 10.0, 1);
+      // lcd.print("T1:");
+      // lcd.print(Cansider_Temp / 10.0, 1);
+      lcd.print("F:");
+      lcd.print(reserved[1], 0);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
       lcd.setCursor(7, 1);
