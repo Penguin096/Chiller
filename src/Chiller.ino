@@ -235,7 +235,13 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
         case WATER_ON:
           SendArr[5] = Chiler_On;
           send = true;
-          Chiler_On = true;
+          if (!Chiler_On)
+          {
+            Chiler_On = true;
+            PCICR |= (1 << PCIE0); // прерывания для FS
+            varTime = millis();    // Сбрасываем счётчик и сохраняем время расчёта
+            LowPressure = false;
+          }
           break;
         case WATER_OFF:
           Chiler_On = false;
@@ -260,7 +266,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           send = true;
           break;
         case CL_PUMP_START:
-          Power_Laser = pow((short)((IncomArr[4] << 8) | IncomArr[3]), 3) * (short)((IncomArr[6] << 8) | IncomArr[5]) * IncomArr[7] / pow(40, 2); // приблизительный расчет мощности лазера
+          Power_Laser = pow((short)((IncomArr[4] << 8) | IncomArr[3]), 3) * ((short)((IncomArr[6] << 8) | IncomArr[5])) * 0.000001 * IncomArr[7] / pow(40, 2); // приблизительный расчет мощности лазера
           break;
         case CL_PUMP_STOP:
           send = true;
@@ -374,10 +380,10 @@ void loop()
         Error = "Air overheat";
       else if (reserved[0] & CL_FLOW_LOW)
         Error = "Flow low";
-      // else if (reserved[0] & CL_WATER_HEATING)
-      //   Error = "Pump ON";
-      //else if (reserved[0] & CL_WATER_OFF)
-      //   Error = "Pump OFF";
+      else if (reserved[0] & CL_WATER_HEATING)
+        Error = "Pump ON";
+      else if (reserved[0] & CL_WATER_OFF)
+        Error = "Pump OFF";
       else if (reserved[0] & COOLING_COMM_FAULT)
         Error = "Comm fault";
       else
@@ -395,15 +401,17 @@ void loop()
       lcd.print(PressureTransducer);
       lcd.print("psi");
       lcd.setCursor(0, 1);
+      lcd.print("                ");
+      lcd.setCursor(0, 1);
       // lcd.print("T1:");
       // lcd.print(Cansider_Temp / 10.0, 1);
       lcd.print("F:");
-      lcd.print(reserved[1], 0);
+      lcd.print(reserved[1]);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
       lcd.setCursor(7, 1);
-      lcd.print("W:");
-      lcd.print(Power_Laser);
+      lcd.print(Power_Laser, 0);
+      lcd.print(" W");
     }
   }
 
@@ -416,16 +424,13 @@ void loop()
       digitalWrite(PUMP, HIGH);
       digitalWrite(Compressor, HIGH);
       reserved[0] &= ~(CL_WATER_OFF);
-      PCICR |= (1 << PCIE0); // прерывания для FS
     }
     else
     {
       PCICR &= ~(1 << PCIE0); // прерывания выкл для FS
       digitalWrite(Compressor, LOW);
       digitalWrite(PUMP, LOW);
-      reserved[0] &= ~(CL_FLOW_LOW);
       reserved[0] |= CL_WATER_OFF;
-      LowPressure = false;
     }
     readTemp();
     Control_Values();
@@ -511,7 +516,17 @@ void loop()
 
   if (enc.held(0))
   {
-    Chiler_On = Chiler_On ? false : true;
+    if (Chiler_On)
+    {
+      Chiler_On = false;
+    }
+    else
+    {
+      Chiler_On = true;
+      PCICR |= (1 << PCIE0); // прерывания для FS
+      varTime = millis();    // Сбрасываем счётчик и сохраняем время расчёта
+      LowPressure = false;
+    }
   }
 }
 
@@ -634,7 +649,7 @@ void Chiller_Protec()
   static uint8_t dm_47;
   static uint8_t dm_48;
 
-  if ((reserved[1] < 40 || (millis() - varTime) > 1000) && !reserved[0])
+  if ((reserved[1] < 35 || (millis() - varTime) > 1000) && !reserved[0])
   {
     dm_48++;
     if (dm_48 > 10)
