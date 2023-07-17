@@ -3,6 +3,9 @@
 // ANALOG: A0, A2
 
 // #define test
+// #define FanProtec
+
+#define Pump_Off 60 // Задержка выключения помпы в сек.
 
 #define Button 2
 #define Compressor 5
@@ -40,9 +43,6 @@
 #define CL_WATER_HEATING 0x01 << 4
 #define CL_WATER_OFF 0x01 << 5
 #define COOLING_COMM_FAULT 0x01 << 6
-
-#define _TACHO_TICKS_AMOUNT 10 // количество тиков для счёта времени
-#define _TACHO_TIMEOUT 1000000 // таймаут прерываний (мкс), после которого считаем что вращение прекратилось
 
 #define USART_BAUDRATE 250000 // Desired Baud Rate
 #define BAUD_PRESCALER (((F_CPU / (USART_BAUDRATE * 16UL))) - 1)
@@ -122,6 +122,8 @@ uint8_t Fan1_Off;
 uint8_t Fan2_Off;
 uint8_t Fan3_Off;
 
+volatile uint8_t PumpDelay_Off;
+
 // шаги изменения температуры уставки 0.1
 int8_t step_a = 1;
 
@@ -193,7 +195,9 @@ void setup()
   lcd.setCursor(0, 0);
   lcd.print("OrchiChiller v2");
 
-  Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
+  //Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
+  Cansider_Sp = EEPROM.read(0);
+  if(Cansider_Sp < 100 || Cansider_Sp > 250) Cansider_Sp = 100;
 
 #ifdef test
   regulator.setpoint = Cansider_Sp; // установка (ставим на 10 градусов)
@@ -245,6 +249,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           break;
         case WATER_OFF:
           Chiler_On = false;
+          PumpDelay_Off = Pump_Off;
           break;
         case CL_SET_TEMP:
           Cansider_Sp = (IncomArr[4] << 8) | IncomArr[3];
@@ -326,6 +331,8 @@ void loop()
   {
     time_10 = millis();
 
+    if(PumpDelay_Off) PumpDelay_Off--;
+
     if (digitalRead(WL))
     {
       reserved[0] |= CL_WATER_LEVEL_ERR;
@@ -381,9 +388,9 @@ void loop()
       else if (reserved[0] & CL_FLOW_LOW)
         Error = "Flow low";
       else if (reserved[0] & CL_WATER_HEATING)
-        Error = "Pump ON";
+        Error = "ON";
       else if (reserved[0] & CL_WATER_OFF)
-        Error = "Pump OFF";
+        Error = "OFF";
       else if (reserved[0] & COOLING_COMM_FAULT)
         Error = "Comm fault";
       else
@@ -420,16 +427,19 @@ void loop()
     time_05 = millis();
     if (Chiler_On)
     {
-      Chiller_Switch = true;
       digitalWrite(PUMP, HIGH);
-      digitalWrite(Compressor, HIGH);
-      reserved[0] &= ~(CL_WATER_OFF);
+      if(reserved[1] > 35) {
+        Chiller_Switch = true;
+        digitalWrite(Compressor, HIGH);
+        reserved[0] &= ~(CL_WATER_OFF);
+      }
     }
     else
     {
       PCICR &= ~(1 << PCIE0); // прерывания выкл для FS
+      reserved[1] = 0;
       digitalWrite(Compressor, LOW);
-      digitalWrite(PUMP, LOW);
+      if(PumpDelay_Off == 0) digitalWrite(PUMP, LOW);
       reserved[0] |= CL_WATER_OFF;
     }
     readTemp();
@@ -453,6 +463,7 @@ void loop()
     if (Chiler_On)
     {
       Chiller_Protec();
+      #ifdef FanProtec
       if ((1 << PD3) & PIND)
       {
         if ((1 << PD7) & PIND)
@@ -480,6 +491,7 @@ void loop()
           Fan3_Off = 0;
         }
       }
+      #endif
     }
   }
 
@@ -519,6 +531,7 @@ void loop()
     if (Chiler_On)
     {
       Chiler_On = false;
+      PumpDelay_Off = Pump_Off;
     }
     else
     {
@@ -678,12 +691,12 @@ void Chiller_Protec()
     }
   }
 
-  if (Cansider_Temp >= 50)
+  if (Cansider_Temp >= 35)
   { // 80
     dm_46 = 0;
     Freez_Temp = false;
   }
-  else if (Cansider_Temp < 50)
+  else if (Cansider_Temp < 35)
   { // 80
     dm_46++;
     if (dm_46 > 100)
