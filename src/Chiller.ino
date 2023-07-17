@@ -197,7 +197,7 @@ void setup()
 
   //Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
   Cansider_Sp = EEPROM.read(0);
-  if(Cansider_Sp < 100 || Cansider_Sp > 250) Cansider_Sp = 100;
+  if(Cansider_Sp < 35 || Cansider_Sp > 250) Cansider_Sp = 100;
 
 #ifdef test
   regulator.setpoint = Cansider_Sp; // установка (ставим на 10 градусов)
@@ -252,7 +252,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           PumpDelay_Off = Pump_Off;
           break;
         case CL_SET_TEMP:
-          Cansider_Sp = (IncomArr[4] << 8) | IncomArr[3];
+          // Cansider_Sp = (IncomArr[4] << 8) | IncomArr[3];
           break;
         case CL_GET_SET_TEMP:
           SendArr[5] = Cansider_Sp & 0xff;
@@ -548,7 +548,7 @@ void loop()
 float expRunningAverage(float newVal)
 {
   static float filVal = 0;
-  filVal += (newVal - filVal) * 0.5; // коэфф. фильтрации 0.5
+  filVal += (newVal - filVal) * 0.25; // коэфф. фильтрации 0.5 Чем он меньше, тем плавнее фильтр
   return filVal;
 }
 
@@ -556,7 +556,7 @@ float expRunningAverage(float newVal)
 float expRunningAverage2(float newVal)
 {
   static float filVal2 = 0;
-  filVal2 += (newVal - filVal2) * 0.5; // коэфф. фильтрации 0.5
+  filVal2 += (newVal - filVal2) * 0.5; // коэфф. фильтрации 0.5 Чем он меньше, тем плавнее фильтр
   return filVal2;
 }
 
