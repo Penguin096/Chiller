@@ -399,8 +399,9 @@ void loop()
     }
     else
     {
+      lcd.clear();
       lcd.setCursor(0, 0);
-      lcd.print("                ");
+      // lcd.print("                ");
       lcd.setCursor(0, 0);
       lcd.print("Set:");
       lcd.print(Cansider_Sp / 10.0, 1);
@@ -408,7 +409,7 @@ void loop()
       lcd.print(PressureTransducer);
       lcd.print("psi");
       lcd.setCursor(0, 1);
-      lcd.print("                ");
+      // lcd.print("                ");
       lcd.setCursor(0, 1);
       // lcd.print("T1:");
       // lcd.print(Cansider_Temp / 10.0, 1);
