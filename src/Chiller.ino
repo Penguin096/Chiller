@@ -94,7 +94,7 @@ GyverRelay regulator(NORMAL);
 #endif
 
 volatile uint8_t Cansider_Sp; // Уставка
-uint8_t Cansider_Gb = 10;     // Гистерезис
+uint8_t Cansider_Gb = 5;     // Гистерезис
 uint16_t Temp_Low_Power = 260;
 uint16_t Temp_High_Power = 300;
 
