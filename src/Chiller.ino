@@ -810,7 +810,7 @@ void readTemp()
   Cansider_Temp = Cansider_Temp >> 2;
 
   Cansider_Temp = expRunningAverage(Cansider_Temp);
-  Cansider_Temp = (Cansider_Temp / 4096.0 * 1.025 * 1000.0 + 10.0);
+  Cansider_Temp = (Cansider_Temp / 4096.0 * 1.025 * 1000.0);
 
   if (sensor1.readTemp())
     Fan_Ctrl_Temp = sensor1.getTemp() * 10.0;
