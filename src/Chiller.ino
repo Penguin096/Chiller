@@ -7,7 +7,7 @@
 
 #define Pump_Off 60 // Задержка выключения помпы в сек.
 
-#define Pressure (11 - (-0.5))    //PAA-21Y 81556.11
+#define Pressure (11.0 - (-0.5))    //PAA-21Y 81556.11
 //#define Pressure (12.8 - (-1.0))  //BC-TP-013N
 
 #define Fan_PWM_Low 128
