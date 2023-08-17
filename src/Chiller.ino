@@ -1,4 +1,4 @@
-// OUTPUT: D3...D6
+// OUTPUT: D3...D6, A1
 // INPUT:  D7...D11
 // ANALOG: A0, A2
 
@@ -7,19 +7,24 @@
 
 #define Pump_Off 60 // Задержка выключения помпы в сек.
 
+#define Pressure (11 - (-0.5))    //PAA-21Y 81556.11
+//#define Pressure (12.8 - (-1.0))  //BC-TP-013N
+
+#define Fan_PWM_Low 128
+
 #define Button 2
 #define Compressor 5
 #define FAN 3
-// #define Valve_1_Hot 6
+#define Valve_1_Hot A1
 #define Valve_2_Cold 4
 #define WL 10
 #define FS 11
 #define RS485_REDE 12
 #define PUMP 6
 
-// #define CansiderTemp A3
+// #define CansiderTemp A2
 #define DS_PIN A3 // пин для термометров
-// #define FanTemp A2
+// #define FanTemp A3
 // #define Pressure A0
 
 #define BUS_RET_COMMAND_HEAD 0x72
@@ -165,7 +170,7 @@ void setup()
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(Compressor, OUTPUT); // PWM //Relay
   pinMode(FAN, OUTPUT);        // PWM //FAN
-  // pinMode(Valve_1_Hot, OUTPUT); // PWM //Valve
+  pinMode(Valve_1_Hot, OUTPUT); //  //Valve
   pinMode(Valve_2_Cold, OUTPUT);
   pinMode(RS485_REDE, OUTPUT);
   pinMode(PUMP, OUTPUT);
@@ -582,7 +587,8 @@ void Check_Pressure()
   //
 
   PressureTransducer = expRunningAverage2(PressureTransducer);
-  PressureTransducer = (PressureTransducer - 815.0) * (159.542 - (-7.252)) / (4076.0 - 815.0); // 4076ацп-20мА //815ацп-4мА
+  PressureTransducer = (PressureTransducer - 815.0) * Pressure / (4076.0 - 815.0); // 4076ацп-20мА //815ацп-4мА
+  PressureTransducer = PressureTransducer * 14.504; // перевод в psi
 
   if (Chiler_On == 0)
   {
@@ -730,7 +736,7 @@ void Control_Fan()
   {
     if (Fan_Ctrl_Temp <= Temp_Low_Power)
     {
-      Fan_PWM = 128;
+      Fan_PWM = Fan_PWM_Low;
     }
     else if (Fan_Ctrl_Temp >= Temp_High_Power)
     {
@@ -738,7 +744,7 @@ void Control_Fan()
     }
     else
     {
-      Fan_PWM = 128 + ((Fan_Ctrl_Temp - Temp_Low_Power) * ((255 - 128) / (Temp_High_Power - Temp_Low_Power)));
+      Fan_PWM = Fan_PWM_Low + ((Fan_Ctrl_Temp - Temp_Low_Power) * ((255 - Fan_PWM_Low) / (Temp_High_Power - Temp_Low_Power)));
 
       if (Fan_PWM > 255)
       {
@@ -766,30 +772,30 @@ void Control_Values()
     if (Cansider_Temp > Cansider_Sp)
     {
       digitalWrite(Valve_2_Cold, HIGH);
-      // digitalWrite(Valve_1_Hot, LOW);
+      digitalWrite(Valve_1_Hot, LOW);
     }
     else if (Cansider_Temp < uint16_t(Cansider_Sp - Cansider_Gb))
     {
       digitalWrite(Valve_2_Cold, LOW);
-      // digitalWrite(Valve_1_Hot, HIGH);
+      digitalWrite(Valve_1_Hot, HIGH);
     }
 #else
     regulator.input = Cansider_Temp; // сообщаем регулятору текущую температуру
     if (regulator.getResult())
     {
       digitalWrite(Valve_2_Cold, HIGH);
-      // digitalWrite(Valve_1_Hot, LOW);
+      digitalWrite(Valve_1_Hot, LOW);
     }
     else
     {
       digitalWrite(Valve_2_Cold, LOW);
-      // digitalWrite(Valve_1_Hot, HIGH);
+      digitalWrite(Valve_1_Hot, HIGH);
     }
 #endif
   }
   else
   {
-    // digitalWrite(Valve_1_Hot, HIGH);
+    digitalWrite(Valve_1_Hot, HIGH);
     digitalWrite(Valve_2_Cold, HIGH);
   }
 }
