@@ -7,8 +7,8 @@
 
 #define Pump_Off 60 // Задержка выключения помпы в сек.
 
-//#define Pressure (11.0*14.504 - (-0.5*14.504))    //PAA-21Y 81556.11
-#define Pressure (12.8*14.504 - (-1.0*14.504))  //BC-TP-013N
+// #define Pressure (11.0*14.504 - (-0.5*14.504))    //PAA-21Y 81556.11
+#define Pressure (12.8 * 14.504 - (-1.0 * 14.504)) // BC-TP-013N
 
 #define Fan_PWM_Low 128
 
@@ -19,11 +19,16 @@
 #define Valve_2_Cold 4
 #define WL 10
 #define FS 11
-#define RS485_REDE 12
+#define RS485_REDE 13
 #define PUMP 6
 
+// пины для подключения контактов STEP, DIR
+#define PIN_STEP 7
+#define PIN_DIR 8
+// скорость двигателя
+#define SPEED 10
+
 // #define CansiderTemp A2
-#define DS_PIN A3 // пин для термометров
 // #define FanTemp A3
 // #define Pressure A0
 
@@ -86,11 +91,13 @@ EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 
 #include <microDS18B20.h>
 
-byte cansiderThermometer[] = {0x28, 0x99, 0x1D, 0xFB, 0x0C, 0x00, 0x00, 0xF7};
-byte fanThermometer[] = {0x28, 0x2F, 0x50, 0xFB, 0x0C, 0x00, 0x00, 0x47};
+#define DS_PIN 12 // пин для термометров
 
-MicroDS18B20<DS_PIN, fanThermometer> sensor1;      // Создаем термометр с адресацией
-MicroDS18B20<DS_PIN, cansiderThermometer> sensor2; // Создаем термометр с адресацией
+byte fanThermometer[] = {0x28, 0x99, 0x1D, 0xFB, 0x0C, 0x00, 0x00, 0xF7};
+byte DS18B20_3[] = {0x28, 0xEB, 0xDD, 0x57, 0x04, 0xE1, 0x3C, 0x11};
+
+MicroDS18B20<DS_PIN, fanThermometer> sensor1; // Создаем термометр с адресацией
+MicroDS18B20<DS_PIN, DS18B20_3> sensor2;      // Создаем термометр с адресацией
 
 #ifdef test
 #include "GyverRelay.h"
@@ -99,7 +106,7 @@ GyverRelay regulator(NORMAL);
 #endif
 
 volatile uint8_t Cansider_Sp; // Уставка
-uint8_t Cansider_Gb = 5;     // Гистерезис
+uint8_t Cansider_Gb = 5;      // Гистерезис
 uint16_t Temp_Low_Power = 260;
 uint16_t Temp_High_Power = 300;
 
@@ -118,6 +125,7 @@ bool Fan;
 uint16_t PressureTransducer;
 uint16_t Cansider_Temp;
 uint16_t Fan_Ctrl_Temp;
+int16_t Test_Temp;
 
 uint32_t time_05;
 uint32_t time_01;
@@ -140,6 +148,25 @@ volatile float Power_Laser;
 
 volatile uint32_t Comm_timeout = micros();
 volatile uint32_t varTime = millis();
+
+int16_t simEEPdata[] = {
+    -200, // starting temperature = -20.0 deg °C
+    50,   // increment by 5.0 deg  °c
+    10,   // 10 entries in the lookup table
+    0,    // average step of ADC reading
+    435,  //-20.0 deg °C
+    524,  //-15
+    625,  //-10
+    740,  //-5
+    870,  // 0
+    1018, // 5
+    1184, // 10
+    1368, // 15
+    1572, // 20
+    1800, // 25.0 deg °C
+};
+
+uint16_t countstep;
 
 void USART_Init()
 {
@@ -168,20 +195,25 @@ void setup()
   //  TCCR2B = (TCCR2B & B11111000) | B00000110; //делитель 256 для
 
   pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(Compressor, OUTPUT); // PWM //Relay
-  pinMode(FAN, OUTPUT);        // PWM //FAN
+  pinMode(Compressor, OUTPUT);  // PWM //Relay
+  pinMode(FAN, OUTPUT);         // PWM //FAN
   pinMode(Valve_1_Hot, OUTPUT); //  //Valve
   pinMode(Valve_2_Cold, OUTPUT);
   pinMode(RS485_REDE, OUTPUT);
   pinMode(PUMP, OUTPUT);
   digitalWrite(RS485_REDE, LOW);
+  //PORTB &= ~(1 << PB5);
 
   pinMode(Button, INPUT_PULLUP); // кнопка INT0
-  pinMode(7, INPUT_PULLUP);      // FAN1
-  pinMode(8, INPUT_PULLUP);      // FAN2
-  pinMode(9, INPUT_PULLUP);      // FAN3
-  pinMode(WL, INPUT_PULLUP);     // WL
-  pinMode(FS, INPUT_PULLUP);     // FS
+  // pinMode(7, INPUT_PULLUP);      // FAN1
+  // pinMode(8, INPUT_PULLUP);      // FAN2
+  pinMode(PIN_STEP, OUTPUT); // STEP
+  pinMode(PIN_DIR, OUTPUT);  // DIR
+  digitalWrite(PIN_STEP, HIGH);
+  digitalWrite(PIN_DIR, LOW);
+  pinMode(9, INPUT_PULLUP);  // FAN3
+  pinMode(WL, INPUT_PULLUP); // WL
+  pinMode(FS, INPUT_PULLUP); // FS
 
   //  PCICR |= (1 << PCIE0);     // прерывания для FS
   PCMSK0 |= (1 << (FS - 8)); // прерывания для FS
@@ -200,9 +232,10 @@ void setup()
   lcd.setCursor(0, 0);
   lcd.print("OrchiChiller v2");
 
-  //Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
+  // Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
   Cansider_Sp = EEPROM.read(0);
-  if(Cansider_Sp < 35 || Cansider_Sp > 250) Cansider_Sp = 100;
+  if (Cansider_Sp < 35 || Cansider_Sp > 250)
+    Cansider_Sp = 100;
 
 #ifdef test
   regulator.setpoint = Cansider_Sp; // установка (ставим на 10 градусов)
@@ -210,7 +243,36 @@ void setup()
   regulator.k = 0.5;                // коэффициент обратной связи (подбирается по факту)
 #endif
   wdt_reset();
-  delay(1000);
+
+  int N = simEEPdata[2];
+  simEEPdata[3] = (simEEPdata[3 + N] - simEEPdata[4]) / N; // average step of ADC reading
+
+  // направление вращения
+  digitalWrite(PIN_DIR, LOW);
+  // Max step
+  for (int j = 0; j < 500; j++)
+  {
+    wdt_reset();
+    digitalWrite(PIN_STEP, HIGH);
+    delay(SPEED);
+    digitalWrite(PIN_STEP, LOW);
+    delay(SPEED);
+  }
+  // изменить направление вращения
+  digitalWrite(PIN_DIR, HIGH);
+  // сделать 1 оборот
+  for (int j = 0; j < 50; j++)
+  {
+    wdt_reset();
+    digitalWrite(PIN_STEP, HIGH);
+    delay(SPEED);
+    digitalWrite(PIN_STEP, LOW);
+    delay(SPEED);
+  }
+  countstep = 50;
+
+  wdt_reset();
+  //delay(500);
   lcd.clear();
 }
 
@@ -290,7 +352,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
 
         if (send)
         {
-          PORTB |= (1 << PB4);
+          PORTB |= (1 << PB5);
           for (uint8_t i = 0; i < sizeof(SendArr); i++)
           {
             while (!(UCSR0A & (1 << UDRE0)))
@@ -304,7 +366,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           {
             asm("NOP");
           }
-          PORTB &= ~(1 << PB4);
+          PORTB &= ~(1 << PB5);
         }
 
         // ReadOk = false;
@@ -336,7 +398,8 @@ void loop()
   {
     time_10 = millis();
 
-    if(PumpDelay_Off) PumpDelay_Off--;
+    if (PumpDelay_Off)
+      PumpDelay_Off--;
 
     if (digitalRead(WL))
     {
@@ -380,8 +443,6 @@ void loop()
         Error = "Fan";
       else if (Freez_Temp)
         Error = "Freez Temp";
-      else if (LowPressure)
-        Error = "Low Pressure";
       else if (CriticalPressure)
         Error = "Critical Pressure";
       else if (reserved[0] & CL_WATER_LEVEL_ERR)
@@ -392,12 +453,15 @@ void loop()
         Error = "Air overheat";
       else if (reserved[0] & CL_FLOW_LOW)
         Error = "Flow low";
+      else if (LowPressure)
+        Error = "Low Pressure";
       else if (reserved[0] & CL_WATER_HEATING)
         Error = "ON";
       else if (reserved[0] & CL_WATER_OFF)
         Error = "OFF";
       else if (reserved[0] & COOLING_COMM_FAULT)
         Error = "Comm fault";
+
       else
         Error = "None";
       lcd.print(Error);
@@ -411,7 +475,7 @@ void loop()
       lcd.print("Set:");
       lcd.print(Cansider_Sp / 10.0, 1);
       lcd.setCursor(10, 0);
-      lcd.print(PressureTransducer);
+      lcd.print(PressureTransducer / 10);
       lcd.print("psi");
       lcd.setCursor(0, 1);
       // lcd.print("                ");
@@ -422,9 +486,13 @@ void loop()
       lcd.print(reserved[1]);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
-      lcd.setCursor(7, 1);
-      lcd.print(Power_Laser, 0);
-      lcd.print(" W");
+      lcd.setCursor(5, 1);
+      // lcd.print(Power_Laser, 0);
+      // lcd.print(" W");
+      lcd.print(Test_Temp / 10.0, 1);
+      lcd.setCursor(11, 1);
+      lcd.print(100.0 / 480.0 * countstep, 0);
+      lcd.print("%");
     }
   }
 
@@ -434,7 +502,8 @@ void loop()
     if (Chiler_On)
     {
       digitalWrite(PUMP, HIGH);
-      if(reserved[1] > 35) {
+      if (reserved[1] > 35)
+      {
         Chiller_Switch = true;
         digitalWrite(Compressor, HIGH);
         reserved[0] &= ~(CL_WATER_OFF);
@@ -445,7 +514,8 @@ void loop()
       PCICR &= ~(1 << PCIE0); // прерывания выкл для FS
       reserved[1] = 0;
       digitalWrite(Compressor, LOW);
-      if(PumpDelay_Off == 0) digitalWrite(PUMP, LOW);
+      if (PumpDelay_Off == 0)
+        digitalWrite(PUMP, LOW);
       reserved[0] |= CL_WATER_OFF;
     }
     readTemp();
@@ -460,6 +530,48 @@ void loop()
     {
       Chiler_On = false;
     }
+
+    if (digitalRead(Valve_2_Cold))
+    {
+      if (Test_Temp - 0.3 * Lookup() - 0.7 * Cansider_Sp)
+      {
+        // открыть
+        //  изменить направление вращения
+        digitalWrite(PIN_DIR, HIGH);
+        // сделать 5 оборот
+        for (int j = 0; j < 5; j++)
+        {
+          wdt_reset();
+          if (countstep < 480)
+          {
+            digitalWrite(PIN_STEP, HIGH);
+            delay(SPEED);
+            digitalWrite(PIN_STEP, LOW);
+            delay(SPEED);
+            countstep = countstep + 1;
+          }
+        }
+      }
+      else if ((Test_Temp - 0.3 * Lookup() - 0.7 * int(Cansider_Sp)) < 0)
+      {
+        // закрыть
+        //  изменить направление вращения
+        digitalWrite(PIN_DIR, LOW);
+        // сделать 5 оборот
+        for (int j = 0; j < 5; j++)
+        {
+          wdt_reset();
+          if (countstep > 50)
+          {
+            digitalWrite(PIN_STEP, HIGH);
+            delay(SPEED);
+            digitalWrite(PIN_STEP, LOW);
+            delay(SPEED);
+            countstep = countstep - 1;
+          }
+        }
+      }
+    }
   }
 
   if ((millis() - time_01) > 100)
@@ -469,7 +581,7 @@ void loop()
     if (Chiler_On)
     {
       Chiller_Protec();
-      #ifdef FanProtec
+#ifdef FanProtec
       if ((1 << PD3) & PIND)
       {
         if ((1 << PD7) & PIND)
@@ -497,7 +609,7 @@ void loop()
           Fan3_Off = 0;
         }
       }
-      #endif
+#endif
     }
   }
 
@@ -548,6 +660,38 @@ void loop()
     }
   }
 }
+int Lookup()
+{
+
+  int8_t dm_902;
+  if (PressureTransducer < simEEPdata[4])
+  {                                                                                // less than the first entry of Lookup table (LUT)
+    dm_902 = (PressureTransducer - simEEPdata[4]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from first LUT data
+    dm_902 = dm_902 + simEEPdata[0];                                               // compute the temperature
+    return dm_902;
+  }
+  else if (PressureTransducer > simEEPdata[3 + simEEPdata[2]])
+  {                                                                                                // more than the last entry of Lookup table (LUT)
+    dm_902 = (PressureTransducer - simEEPdata[3 + simEEPdata[2]]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from last LUT data
+    dm_902 = simEEPdata[0] + simEEPdata[1] * (simEEPdata[2] - 1) + dm_902;                         // compute the temperature
+    return dm_902;
+  }
+  int I = PressureTransducer / simEEPdata[3] - 5; // find approximate location to lookup
+  // simEEPdata[2] is the average ADC increment per table entry
+  if (I < 1 || I > simEEPdata[2])
+    I = 1; // Out of range. Then start from first table entry
+
+  while (I < simEEPdata[2])
+  { // up to the end of lookup table
+    if (PressureTransducer < simEEPdata[3 + I])
+      break;
+    I = I + 1;
+  }
+
+  dm_902 = (PressureTransducer - simEEPdata[3 + I - 1]) * simEEPdata[1] / (simEEPdata[3 + I] - simEEPdata[3 + I - 1]);
+  dm_902 = simEEPdata[0] + simEEPdata[1] * (I - 2) + dm_902; // compute actual value
+  return dm_902;
+}
 
 // бегущее среднее
 float expRunningAverage(float newVal)
@@ -587,7 +731,7 @@ void Check_Pressure()
   //
 
   PressureTransducer = expRunningAverage2(PressureTransducer);
-  PressureTransducer = (Pressure/(4042.0-804.0)) * (PressureTransducer - 804.0) + (-1.0*14.504); // 4042ацп-20мА //804ацп-4мА
+  PressureTransducer = ((Pressure / (4042.0 - 804.0)) * (PressureTransducer - 804.0) + (-1.0 * 14.504)) * 10.0; // 4042ацп-20мА //804ацп-4мА
 
   if (Chiler_On == 0)
   {
@@ -595,7 +739,7 @@ void Check_Pressure()
     dm_93 = 0;
 
     //---- Low Pressure Chiler Off ----
-    if (PressureTransducer < Sp_Low_Press_Pup)
+    if ((PressureTransducer / 10) < Sp_Low_Press_Pup)
     {
       dm_90++;
       if (dm_90 > 30)
@@ -610,7 +754,7 @@ void Check_Pressure()
     }
 
     //---- Critical Pressure ChilerOff ----
-    if (PressureTransducer < Sp_Critical_Press_Pup)
+    if ((PressureTransducer / 10) < Sp_Critical_Press_Pup)
     {
       dm_91++;
       if (dm_91 > 30)
@@ -630,7 +774,7 @@ void Check_Pressure()
     dm_91 = 0;
 
     //---- Low Pressure Chiler On ----
-    if (PressureTransducer < Sp_Low_Press)
+    if ((PressureTransducer / 10) < Sp_Low_Press)
     {
       dm_92++;
       if (dm_92 > 30)
@@ -645,7 +789,7 @@ void Check_Pressure()
     }
 
     //---- Critical Pressure Chiler On ----
-    if (PressureTransducer < Sp_Critical_Press)
+    if ((PressureTransducer / 10) < Sp_Critical_Press)
     {
       dm_93++;
       if (dm_93 > 100)
@@ -819,10 +963,13 @@ void readTemp()
 
   if (sensor1.readTemp())
     Fan_Ctrl_Temp = sensor1.getTemp() * 10.0;
-  else if (sensor2.readTemp())
-    Fan_Ctrl_Temp = sensor2.getTemp() * 10.0;
   else
     ;
+
+  if (sensor2.readTemp())
+    Test_Temp = sensor2.getTemp() * 10.0;
+  else
+    Test_Temp = 999;
 
   sensor1.requestTemp(); // Запрашиваем преобразование температуры, но не ждем.
   sensor2.requestTemp();
