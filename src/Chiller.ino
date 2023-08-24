@@ -126,6 +126,7 @@ uint16_t PressureTransducer;
 uint16_t Cansider_Temp;
 uint16_t Fan_Ctrl_Temp;
 int16_t Test_Temp;
+int16_t Press_Temp;
 
 uint32_t time_05;
 uint32_t time_01;
@@ -482,8 +483,9 @@ void loop()
       lcd.setCursor(0, 1);
       // lcd.print("T1:");
       // lcd.print(Cansider_Temp / 10.0, 1);
-      lcd.print("F:");
-      lcd.print(reserved[1]);
+      //lcd.print("F:");
+      //lcd.print(reserved[1]);
+      lcd.print(Press_Temp / 10.0, 1);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
       lcd.setCursor(5, 1);
@@ -533,7 +535,8 @@ void loop()
 
     if (digitalRead(Valve_2_Cold))
     {
-      if (Test_Temp - 0.3 * Lookup() - 0.7 * Cansider_Sp)
+      Press_Temp = Lookup();
+      if ((Test_Temp - 0.3 * Press_Temp - 0.7 * int(Cansider_Sp)) > 0)
       {
         // открыть
         //  изменить направление вращения
@@ -552,7 +555,7 @@ void loop()
           }
         }
       }
-      else if ((Test_Temp - 0.3 * Lookup() - 0.7 * int(Cansider_Sp)) < 0)
+      else if ((Test_Temp - 0.3 * Press_Temp - 0.7 * int(Cansider_Sp)) < 0)
       {
         // закрыть
         //  изменить направление вращения
@@ -660,10 +663,10 @@ void loop()
     }
   }
 }
-int Lookup()
+int16_t Lookup()
 {
 
-  int8_t dm_902;
+  int16_t dm_902;
   if (PressureTransducer < simEEPdata[4])
   {                                                                                // less than the first entry of Lookup table (LUT)
     dm_902 = (PressureTransducer - simEEPdata[4]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from first LUT data
@@ -964,7 +967,7 @@ void readTemp()
   if (sensor1.readTemp())
     Fan_Ctrl_Temp = sensor1.getTemp() * 10.0;
   else
-    ;
+    Fan_Ctrl_Temp = 999;
 
   if (sensor2.readTemp())
     Test_Temp = sensor2.getTemp() * 10.0;
