@@ -106,7 +106,7 @@ GyverRelay regulator(NORMAL);
 #endif
 
 volatile uint8_t Cansider_Sp; // Уставка
-uint8_t Cansider_Gb = 5;      // Гистерезис
+uint8_t Cansider_Gb = 20;      // Гистерезис
 uint16_t Temp_Low_Power = 260;
 uint16_t Temp_High_Power = 300;
 
@@ -150,12 +150,15 @@ volatile float Power_Laser;
 volatile uint32_t Comm_timeout = micros();
 volatile uint32_t varTime = millis();
 
+uint32_t valveTime = millis();
+
 int16_t simEEPdata[] = {
-    -200, // starting temperature = -20.0 deg °C
+    -250, // starting temperature = -20.0 deg °C
     50,   // increment by 5.0 deg  °c
-    10,   // 10 entries in the lookup table
+    11,   // 10 entries in the lookup table
     0,    // average step of ADC reading
-    435,  //-20.0 deg °C
+    360,  //-25.0 deg °C
+    435,  //-20.0
     524,  //-15
     625,  //-10
     740,  //-5
@@ -203,14 +206,14 @@ void setup()
   pinMode(RS485_REDE, OUTPUT);
   pinMode(PUMP, OUTPUT);
   digitalWrite(RS485_REDE, LOW);
-  //PORTB &= ~(1 << PB5);
+  // PORTB &= ~(1 << PB5);
 
   pinMode(Button, INPUT_PULLUP); // кнопка INT0
   // pinMode(7, INPUT_PULLUP);      // FAN1
   // pinMode(8, INPUT_PULLUP);      // FAN2
   pinMode(PIN_STEP, OUTPUT); // STEP
   pinMode(PIN_DIR, OUTPUT);  // DIR
-  digitalWrite(PIN_STEP, HIGH);
+  digitalWrite(PIN_STEP, LOW);
   digitalWrite(PIN_DIR, LOW);
   pinMode(9, INPUT_PULLUP);  // FAN3
   pinMode(WL, INPUT_PULLUP); // WL
@@ -273,7 +276,7 @@ void setup()
   countstep = 50;
 
   wdt_reset();
-  //delay(500);
+  // delay(500);
   lcd.clear();
 }
 
@@ -483,15 +486,15 @@ void loop()
       lcd.setCursor(0, 1);
       // lcd.print("T1:");
       // lcd.print(Cansider_Temp / 10.0, 1);
-      //lcd.print("F:");
-      //lcd.print(reserved[1]);
-      lcd.print(Press_Temp / 10.0, 1);
+      // lcd.print("F:");
+      // lcd.print(reserved[1]);
+      lcd.print((Test_Temp-Press_Temp) / 10.0, 1);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
-      lcd.setCursor(5, 1);
+      // lcd.setCursor(5, 1);
       // lcd.print(Power_Laser, 0);
       // lcd.print(" W");
-      lcd.print(Test_Temp / 10.0, 1);
+      // lcd.print(Test_Temp / 10.0, 1);
       lcd.setCursor(11, 1);
       lcd.print(100.0 / 480.0 * countstep, 0);
       lcd.print("%");
@@ -533,54 +536,55 @@ void loop()
       Chiler_On = false;
     }
 
-    if (digitalRead(Valve_2_Cold))
-    {
-      Press_Temp = Lookup();
-      if ((Test_Temp - 0.3 * Press_Temp - 0.7 * int(Cansider_Sp)) > 0)
-      {
-        // открыть
-        //  изменить направление вращения
-        digitalWrite(PIN_DIR, HIGH);
-        // сделать 5 оборот
-        for (int j = 0; j < 5; j++)
-        {
-          wdt_reset();
-          if (countstep < 480)
-          {
-            digitalWrite(PIN_STEP, HIGH);
-            delay(SPEED);
-            digitalWrite(PIN_STEP, LOW);
-            delay(SPEED);
-            countstep = countstep + 1;
-          }
-        }
-      }
-      else if ((Test_Temp - 0.3 * Press_Temp - 0.7 * int(Cansider_Sp)) < 0)
-      {
-        // закрыть
-        //  изменить направление вращения
-        digitalWrite(PIN_DIR, LOW);
-        // сделать 5 оборот
-        for (int j = 0; j < 5; j++)
-        {
-          wdt_reset();
-          if (countstep > 50)
-          {
-            digitalWrite(PIN_STEP, HIGH);
-            delay(SPEED);
-            digitalWrite(PIN_STEP, LOW);
-            delay(SPEED);
-            countstep = countstep - 1;
-          }
-        }
-      }
-    }
+    // if (digitalRead(Valve_2_Cold))
+    // {
+    //   Press_Temp = Lookup();
+    //   if ((Test_Temp - 0.3 * Press_Temp - 0.7 * int(Cansider_Sp)) > 0)
+    //   {
+    //     // открыть
+    //     //  изменить направление вращения
+    //     digitalWrite(PIN_DIR, HIGH);
+    //     // сделать 5 оборот
+    //     for (int j = 0; j < 5; j++)
+    //     {
+    //       wdt_reset();
+    //       if (countstep < 480)
+    //       {
+    //         digitalWrite(PIN_STEP, HIGH);
+    //         delay(SPEED);
+    //         digitalWrite(PIN_STEP, LOW);
+    //         delay(SPEED);
+    //         countstep = countstep + 1;
+    //       }
+    //     }
+    //   }
+    //   else if ((Test_Temp - 0.3 * Press_Temp - 0.7 * int(Cansider_Sp)) < 0)
+    //   {
+    //     // закрыть
+    //     //  изменить направление вращения
+    //     digitalWrite(PIN_DIR, LOW);
+    //     // сделать 5 оборот
+    //     for (int j = 0; j < 5; j++)
+    //     {
+    //       wdt_reset();
+    //       if (countstep > 50)
+    //       {
+    //         digitalWrite(PIN_STEP, HIGH);
+    //         delay(SPEED);
+    //         digitalWrite(PIN_STEP, LOW);
+    //         delay(SPEED);
+    //         countstep = countstep - 1;
+    //       }
+    //     }
+    //   }
+    // }
   }
 
   if ((millis() - time_01) > 100)
   {
     time_01 = millis();
     Check_Pressure();
+    Press_Temp = Lookup();
     if (Chiler_On)
     {
       Chiller_Protec();
@@ -662,21 +666,52 @@ void loop()
       LowPressure = false;
     }
   }
+
+  
+  if (((Test_Temp - Press_Temp) < 0) || (PressureTransducer < 600) || ((Cansider_Temp < Cansider_Sp)&&(PressureTransducer < 900)))
+  {
+    // открыть
+    // изменить направление вращения
+    if (countstep > 480)
+      return;
+    digitalWrite(PIN_DIR, HIGH);
+    countstep = countstep + 1;
+  }
+  else if (((Test_Temp - Press_Temp) > 0))
+  {
+    // закрыть
+    // изменить направление вращения
+    if (countstep < 50)
+      return;
+    digitalWrite(PIN_DIR, LOW);
+    countstep = countstep - 1;
+  }
+  else
+  {
+    return;
+  }
+  digitalWrite(PIN_STEP, HIGH);
+  delay(SPEED);
+  digitalWrite(PIN_STEP, LOW);
+  delay(SPEED);
 }
+
 int16_t Lookup()
 {
 
   int16_t dm_902;
   if (PressureTransducer < simEEPdata[4])
-  {                                                                                // less than the first entry of Lookup table (LUT)
-    dm_902 = (PressureTransducer - simEEPdata[4]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from first LUT data
-    dm_902 = dm_902 + simEEPdata[0];                                               // compute the temperature
+  { // less than the first entry of Lookup table (LUT)
+    // dm_902 = (PressureTransducer - simEEPdata[4]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from first LUT data
+    // dm_902 = dm_902 + simEEPdata[0];                                               // compute the temperature
+    dm_902 = -250;
     return dm_902;
   }
   else if (PressureTransducer > simEEPdata[3 + simEEPdata[2]])
-  {                                                                                                // more than the last entry of Lookup table (LUT)
-    dm_902 = (PressureTransducer - simEEPdata[3 + simEEPdata[2]]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from last LUT data
-    dm_902 = simEEPdata[0] + simEEPdata[1] * (simEEPdata[2] - 1) + dm_902;                         // compute the temperature
+  { // more than the last entry of Lookup table (LUT)
+    // dm_902 = (PressureTransducer - simEEPdata[3 + simEEPdata[2]]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from last LUT data
+    // dm_902 = simEEPdata[0] + simEEPdata[1] * (simEEPdata[2] - 1) + dm_902;                         // compute the temperature
+    dm_902 = 250;
     return dm_902;
   }
   int I = PressureTransducer / simEEPdata[3] - 5; // find approximate location to lookup
