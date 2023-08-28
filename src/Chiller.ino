@@ -725,10 +725,10 @@ void loop()
   {
     return;
   }
-  digitalWrite(PIN_STEP, HIGH);
-  delay(SPEED);
-  digitalWrite(PIN_STEP, LOW);
-  delay(SPEED);
+  // digitalWrite(PIN_STEP, HIGH);
+  // delay(SPEED);
+  // digitalWrite(PIN_STEP, LOW);
+  // delay(SPEED);
 }
 
 int16_t Lookup()
