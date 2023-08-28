@@ -91,6 +91,10 @@ EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 
 #include <microDS18B20.h>
 
+#include "GyverStepper.h"
+
+GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
+
 #define DS_PIN 12 // пин для термометров
 
 byte fanThermometer[] = {0x28, 0x99, 0x1D, 0xFB, 0x0C, 0x00, 0x00, 0xF7};
@@ -106,7 +110,7 @@ GyverRelay regulator(NORMAL);
 #endif
 
 volatile uint8_t Cansider_Sp; // Уставка
-uint8_t Cansider_Gb = 20;      // Гистерезис
+uint8_t Cansider_Gb = 20;     // Гистерезис
 uint16_t Temp_Low_Power = 260;
 uint16_t Temp_High_Power = 300;
 
@@ -170,7 +174,7 @@ int16_t simEEPdata[] = {
     1800, // 25.0 deg °C
 };
 
-uint16_t countstep;
+int16_t countstep;
 
 void USART_Init()
 {
@@ -211,8 +215,8 @@ void setup()
   pinMode(Button, INPUT_PULLUP); // кнопка INT0
   // pinMode(7, INPUT_PULLUP);      // FAN1
   // pinMode(8, INPUT_PULLUP);      // FAN2
-  pinMode(PIN_STEP, OUTPUT); // STEP
-  pinMode(PIN_DIR, OUTPUT);  // DIR
+  // pinMode(PIN_STEP, OUTPUT); // STEP
+  // pinMode(PIN_DIR, OUTPUT);  // DIR
   digitalWrite(PIN_STEP, LOW);
   digitalWrite(PIN_DIR, LOW);
   pinMode(9, INPUT_PULLUP);  // FAN3
@@ -251,29 +255,42 @@ void setup()
   int N = simEEPdata[2];
   simEEPdata[3] = (simEEPdata[3 + N] - simEEPdata[4]) / N; // average step of ADC reading
 
-  // направление вращения
-  digitalWrite(PIN_DIR, LOW);
-  // Max step
-  for (int j = 0; j < 500; j++)
+  // // направление вращения
+  // digitalWrite(PIN_DIR, LOW);
+  // // Max step
+  // for (int j = 0; j < 500; j++)
+  // {
+  //   wdt_reset();
+  //   digitalWrite(PIN_STEP, HIGH);
+  //   delay(SPEED);
+  //   digitalWrite(PIN_STEP, LOW);
+  //   delay(SPEED);
+  // }
+  // // изменить направление вращения
+  // digitalWrite(PIN_DIR, HIGH);
+  // // сделать 1 оборот
+  // for (int j = 0; j < 50; j++)
+  // {
+  //   wdt_reset();
+  //   digitalWrite(PIN_STEP, HIGH);
+  //   delay(SPEED);
+  //   digitalWrite(PIN_STEP, LOW);
+  //   delay(SPEED);
+  // }
+  // countstep = 50;
+  // установка макс. скорости в шагах/сек
+  stepper.setMaxSpeed(50);
+  // режим следования к целевй позиции
+  stepper.setRunMode(FOLLOW_POS);
+  // можно установить позицию
+  stepper.setTarget(-500); // в шагах
+  while (stepper.tick())
   {
     wdt_reset();
-    digitalWrite(PIN_STEP, HIGH);
-    delay(SPEED);
-    digitalWrite(PIN_STEP, LOW);
-    delay(SPEED);
   }
-  // изменить направление вращения
-  digitalWrite(PIN_DIR, HIGH);
-  // сделать 1 оборот
-  for (int j = 0; j < 50; j++)
-  {
-    wdt_reset();
-    digitalWrite(PIN_STEP, HIGH);
-    delay(SPEED);
-    digitalWrite(PIN_STEP, LOW);
-    delay(SPEED);
-  }
-  countstep = 50;
+  stepper.setCurrent(0);
+  stepper.setTarget(50); // в шагах
+  countstep = stepper.getTarget(); // Чтение текущей позиции мотора в шагах
 
   wdt_reset();
   // delay(500);
@@ -397,6 +414,7 @@ ISR(PCINT0_vect)
 void loop()
 {
   wdt_reset();
+  stepper.tick();
 
   if ((millis() - time_10) > 1000)
   {
@@ -488,7 +506,7 @@ void loop()
       // lcd.print(Cansider_Temp / 10.0, 1);
       // lcd.print("F:");
       // lcd.print(reserved[1]);
-      lcd.print((Test_Temp-Press_Temp) / 10.0, 1);
+      lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
       // lcd.setCursor(5, 1);
@@ -496,7 +514,7 @@ void loop()
       // lcd.print(" W");
       // lcd.print(Test_Temp / 10.0, 1);
       lcd.setCursor(11, 1);
-      lcd.print(100.0 / 480.0 * countstep, 0);
+      lcd.print(100.0 / 480.0 * stepper.getCurrent(), 0);
       lcd.print("%");
     }
   }
@@ -667,24 +685,41 @@ void loop()
     }
   }
 
-  
-  if (((Test_Temp - Press_Temp) < 0) || (PressureTransducer < 600) || ((Cansider_Temp < Cansider_Sp)&&(PressureTransducer < 900)))
+  if ((Cansider_Temp < Cansider_Sp) && Chiler_On)
+  {
+    digitalWrite(Valve_1_Hot, HIGH);
+    // закрыть
+    // изменить направление вращения
+    // if (countstep < 0)
+    //   return;
+    // digitalWrite(PIN_DIR, LOW);
+    // countstep = countstep - 1;
+    stepper.setTarget(0);            // в шагах
+  }
+  // else if (((Test_Temp - Press_Temp) < 0) || (PressureTransducer < 600) || ((Cansider_Temp < Cansider_Sp) && (PressureTransducer < 900)))
+  else if (((Test_Temp - Press_Temp) < 0) || (PressureTransducer < 600) || !Chiler_On)
   {
     // открыть
     // изменить направление вращения
-    if (countstep > 480)
+    // if (countstep > 480)
+    //   return;
+    // digitalWrite(PIN_DIR, HIGH);
+    // countstep = countstep + 1;
+    if ((stepper.getTarget()+1) > 480)
       return;
-    digitalWrite(PIN_DIR, HIGH);
-    countstep = countstep + 1;
+    stepper.setTarget(stepper.getTarget() + 1); // в шагах
   }
   else if (((Test_Temp - Press_Temp) > 0))
   {
     // закрыть
     // изменить направление вращения
-    if (countstep < 50)
+    // if (countstep < 50)
+    //   return;
+    // digitalWrite(PIN_DIR, LOW);
+    // countstep = countstep - 1;
+        if ((stepper.getTarget()-1) < 50)
       return;
-    digitalWrite(PIN_DIR, LOW);
-    countstep = countstep - 1;
+    stepper.setTarget(stepper.getTarget() - 1); // в шагах
   }
   else
   {
