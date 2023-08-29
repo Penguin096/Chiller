@@ -1,6 +1,6 @@
 // OUTPUT: D3...D6, A1
-// INPUT:  D7...D11
-// ANALOG: A0, A2
+// INPUT:  D7...D9
+// ANALOG: A0, A2, A6
 
 // #define test
 // #define FanProtec
@@ -18,7 +18,7 @@
 #define Valve_1_Hot A1
 #define Valve_2_Cold 4
 #define WL 10
-#define FS 11
+#define FS 9
 #define RS485_REDE 13
 #define PUMP 6
 
@@ -92,10 +92,12 @@ EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 #include <microDS18B20.h>
 
 #include "GyverStepper.h"
-
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
 
-#define DS_PIN 12 // пин для термометров
+#include "GyverPID.h"
+GyverPID regulator(15.0, 150.0, 5.0); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
+
+#define DS_PIN A3 // пин для термометров
 
 byte fanThermometer[] = {0x28, 0x99, 0x1D, 0xFB, 0x0C, 0x00, 0x00, 0xF7};
 byte DS18B20_3[] = {0x28, 0xEB, 0xDD, 0x57, 0x04, 0xE1, 0x3C, 0x11};
@@ -110,7 +112,7 @@ GyverRelay regulator(NORMAL);
 #endif
 
 volatile uint8_t Cansider_Sp; // Уставка
-uint8_t Cansider_Gb = 20;     // Гистерезис
+uint8_t Cansider_Gb = 10;     // Гистерезис
 uint16_t Temp_Low_Power = 260;
 uint16_t Temp_High_Power = 300;
 
@@ -174,21 +176,19 @@ int16_t simEEPdata[] = {
     1800, // 25.0 deg °C
 };
 
-int16_t countstep;
-
-void USART_Init()
+void USART1_Init()
 {
   // Set Baud Rate
-  UBRR0H = BAUD_PRESCALER >> 8;
-  UBRR0L = BAUD_PRESCALER;
+  UBRR1H = BAUD_PRESCALER >> 8;
+  UBRR1L = BAUD_PRESCALER;
 
   // Set Frame Format
-  UCSR0C = ASYNCHRONOUS | PARITY_MODE | STOP_BIT | DATA_BIT;
+  UCSR1C = ASYNCHRONOUS | PARITY_MODE | STOP_BIT | DATA_BIT;
 
   // Enable Receiver and Transmitter
-  UCSR0B = (1 << RXEN0) | (1 << TXEN0);
+  UCSR1B = (1 << RXEN0) | (1 << TXEN0);
 
-  UCSR0B |= RX_COMPLETE_INTERRUPT; // enable interrupt
+  UCSR1B |= RX_COMPLETE_INTERRUPT; // enable interrupt
 
   // Enable Global Interrupts
   sei();
@@ -210,16 +210,17 @@ void setup()
   pinMode(RS485_REDE, OUTPUT);
   pinMode(PUMP, OUTPUT);
   digitalWrite(RS485_REDE, LOW);
+  pinMode(11, OUTPUT); // TXD1
   // PORTB &= ~(1 << PB5);
 
   pinMode(Button, INPUT_PULLUP); // кнопка INT0
   // pinMode(7, INPUT_PULLUP);      // FAN1
   // pinMode(8, INPUT_PULLUP);      // FAN2
+  // pinMode(9, INPUT_PULLUP);  // FAN3
   // pinMode(PIN_STEP, OUTPUT); // STEP
   // pinMode(PIN_DIR, OUTPUT);  // DIR
-  digitalWrite(PIN_STEP, LOW);
-  digitalWrite(PIN_DIR, LOW);
-  pinMode(9, INPUT_PULLUP);  // FAN3
+  // digitalWrite(PIN_STEP, LOW);
+  // digitalWrite(PIN_DIR, LOW);
   pinMode(WL, INPUT_PULLUP); // WL
   pinMode(FS, INPUT_PULLUP); // FS
 
@@ -231,7 +232,8 @@ void setup()
   // ADMUX |= (1 << REFS0);
   ADMUX |= ((1 << REFS1) | (1 << REFS0)); // ADC_1V1
 
-  USART_Init();
+  USART1_Init();
+  Serial.begin(9600);
 
   lcd.init(); // initialize the lcd
 
@@ -255,29 +257,6 @@ void setup()
   int N = simEEPdata[2];
   simEEPdata[3] = (simEEPdata[3 + N] - simEEPdata[4]) / N; // average step of ADC reading
 
-  // // направление вращения
-  // digitalWrite(PIN_DIR, LOW);
-  // // Max step
-  // for (int j = 0; j < 500; j++)
-  // {
-  //   wdt_reset();
-  //   digitalWrite(PIN_STEP, HIGH);
-  //   delay(SPEED);
-  //   digitalWrite(PIN_STEP, LOW);
-  //   delay(SPEED);
-  // }
-  // // изменить направление вращения
-  // digitalWrite(PIN_DIR, HIGH);
-  // // сделать 1 оборот
-  // for (int j = 0; j < 50; j++)
-  // {
-  //   wdt_reset();
-  //   digitalWrite(PIN_STEP, HIGH);
-  //   delay(SPEED);
-  //   digitalWrite(PIN_STEP, LOW);
-  //   delay(SPEED);
-  // }
-  // countstep = 50;
   // установка макс. скорости в шагах/сек
   stepper.setMaxSpeed(50);
   // режим следования к целевй позиции
@@ -290,14 +269,17 @@ void setup()
   }
   stepper.setCurrent(0);
   stepper.setTarget(50); // в шагах
-  countstep = stepper.getTarget(); // Чтение текущей позиции мотора в шагах
+
+  regulator.setDirection(REVERSE); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
+  regulator.setLimits(50, 450);    // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
+  regulator.setpoint = 0;          // сообщаем регулятору, которую он должен поддерживать
 
   wdt_reset();
   // delay(500);
   lcd.clear();
 }
 
-ISR(USART_RX_vect) // Обрабатываем прерывание по поступлению байта
+ISR(USART1_RX_vect) // Обрабатываем прерывание по поступлению байта
 {
   static uint8_t CountArr;     // счетчик принятых байтов
   static uint8_t IncomArr[14]; // входящий массив
@@ -305,7 +287,7 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
   bool ReadOk;
   bool send;
 
-  IncomArr[CountArr] = UDR0; // принимаем байт в массив
+  IncomArr[CountArr] = UDR1; // принимаем байт в массив
   if (IncomArr[0] == BUS_RET_COMMAND_HEAD && ReadOk == false)
   {
     CountArr++;
@@ -376,12 +358,12 @@ ISR(USART_RX_vect) // Обрабатываем прерывание по пос�
           PORTB |= (1 << PB5);
           for (uint8_t i = 0; i < sizeof(SendArr); i++)
           {
-            while (!(UCSR0A & (1 << UDRE0)))
+            while (!(UCSR1A & (1 << UDRE1)))
               ;                // ждем опустошения буфера
-            UDR0 = SendArr[i]; // отправляем байт
+            UDR1 = SendArr[i]; // отправляем байт
             // SendArr[i] = 0;    // сразу же чистим переменную
           }
-          while (!(UCSR0A & (1 << UDRE0)))
+          while (!(UCSR1A & (1 << UDRE1)))
             ; // ждем опустошения буфера
           for (int i = 0; i < 1000; i++)
           {
@@ -411,10 +393,33 @@ ISR(PCINT0_vect)
   }
 }
 
+// управление через плоттер
+void parsing()
+{
+  if (Serial.available() > 1)
+  {
+    char incoming = Serial.read();
+    float value = Serial.parseFloat();
+    switch (incoming)
+    {
+    case 'p':
+      regulator.Kp = value;
+      break;
+    case 'i':
+      regulator.Ki = value;
+      break;
+    case 'd':
+      regulator.Kd = value;
+      break;
+    }
+  }
+}
+
 void loop()
 {
   wdt_reset();
   stepper.tick();
+  parsing();
 
   if ((millis() - time_10) > 1000)
   {
@@ -514,7 +519,7 @@ void loop()
       // lcd.print(" W");
       // lcd.print(Test_Temp / 10.0, 1);
       lcd.setCursor(11, 1);
-      lcd.print(100.0 / 480.0 * stepper.getCurrent(), 0);
+      lcd.print(100.0 / 450.0 * stepper.getCurrent(), 0);
       lcd.print("%");
     }
   }
@@ -522,6 +527,12 @@ void loop()
   if ((millis() - time_05) > 500)
   {
     time_05 = millis();
+
+    Serial.print(Cansider_Sp);
+    Serial.print(',');
+    Serial.print(Test_Temp - Press_Temp);
+    Serial.println();
+
     if (Chiler_On)
     {
       digitalWrite(PUMP, HIGH);
@@ -603,6 +614,7 @@ void loop()
     time_01 = millis();
     Check_Pressure();
     Press_Temp = Lookup();
+    stepping();
     if (Chiler_On)
     {
       Chiller_Protec();
@@ -684,79 +696,34 @@ void loop()
       LowPressure = false;
     }
   }
-
-  if ((Cansider_Temp < Cansider_Sp) && Chiler_On)
-  {
-    digitalWrite(Valve_1_Hot, HIGH);
-    // закрыть
-    // изменить направление вращения
-    // if (countstep < 0)
-    //   return;
-    // digitalWrite(PIN_DIR, LOW);
-    // countstep = countstep - 1;
-    stepper.setTarget(0);            // в шагах
-  }
-  // else if (((Test_Temp - Press_Temp) < 0) || (PressureTransducer < 600) || ((Cansider_Temp < Cansider_Sp) && (PressureTransducer < 900)))
-  else if (((Test_Temp - Press_Temp) < 0) || (PressureTransducer < 600) || !Chiler_On)
-  {
-    // открыть
-    // изменить направление вращения
-    // if (countstep > 480)
-    //   return;
-    // digitalWrite(PIN_DIR, HIGH);
-    // countstep = countstep + 1;
-    if ((stepper.getTarget()+1) > 480)
-      return;
-    stepper.setTarget(stepper.getTarget() + 1); // в шагах
-  }
-  else if (((Test_Temp - Press_Temp) > 0))
-  {
-    // закрыть
-    // изменить направление вращения
-    // if (countstep < 50)
-    //   return;
-    // digitalWrite(PIN_DIR, LOW);
-    // countstep = countstep - 1;
-        if ((stepper.getTarget()-1) < 50)
-      return;
-    stepper.setTarget(stepper.getTarget() - 1); // в шагах
-  }
-  else
-  {
-    return;
-  }
-  // digitalWrite(PIN_STEP, HIGH);
-  // delay(SPEED);
-  // digitalWrite(PIN_STEP, LOW);
-  // delay(SPEED);
 }
 
 int16_t Lookup()
 {
 
   int16_t dm_902;
-  if (PressureTransducer < simEEPdata[4])
+  if (int(PressureTransducer) < simEEPdata[4])
   { // less than the first entry of Lookup table (LUT)
     // dm_902 = (PressureTransducer - simEEPdata[4]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from first LUT data
     // dm_902 = dm_902 + simEEPdata[0];                                               // compute the temperature
     dm_902 = -250;
     return dm_902;
   }
-  else if (PressureTransducer > simEEPdata[3 + simEEPdata[2]])
+  else if (int(PressureTransducer) > simEEPdata[3 + simEEPdata[2]])
   { // more than the last entry of Lookup table (LUT)
     // dm_902 = (PressureTransducer - simEEPdata[3 + simEEPdata[2]]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from last LUT data
     // dm_902 = simEEPdata[0] + simEEPdata[1] * (simEEPdata[2] - 1) + dm_902;                         // compute the temperature
     dm_902 = 250;
     return dm_902;
   }
-  int I = PressureTransducer / simEEPdata[3] - 5; // find approximate location to lookup
+  int I = int(PressureTransducer) / simEEPdata[3] - 5; // find approximate location to lookup
   // simEEPdata[2] is the average ADC increment per table entry
   if (I < 1 || I > simEEPdata[2])
     I = 1; // Out of range. Then start from first table entry
 
   while (I < simEEPdata[2])
   { // up to the end of lookup table
-    if (PressureTransducer < simEEPdata[3 + I])
+    if (int(PressureTransducer) < simEEPdata[3 + I])
       break;
     I = I + 1;
   }
@@ -764,6 +731,62 @@ int16_t Lookup()
   dm_902 = (PressureTransducer - simEEPdata[3 + I - 1]) * simEEPdata[1] / (simEEPdata[3 + I] - simEEPdata[3 + I - 1]);
   dm_902 = simEEPdata[0] + simEEPdata[1] * (I - 2) + dm_902; // compute actual value
   return dm_902;
+}
+
+void stepping()
+{
+  // if ((Cansider_Temp < Cansider_Sp) && Chiler_On)
+  // {
+  //   digitalWrite(Valve_1_Hot, HIGH);
+  //   // закрыть
+  //   stepper.setTarget(0); // в шагах
+  // }
+  // // else if (((Test_Temp - Press_Temp) < 0) || (PressureTransducer < 600) || ((Cansider_Temp < Cansider_Sp) && (PressureTransducer < 900)))
+  // else if (((Test_Temp - Press_Temp) < 0) || (PressureTransducer < 600) || !Chiler_On)
+  // {
+  //   // открыть
+  //   // изменить направление вращения
+  //   if (stepper.getTarget() > 450)
+  //     return;
+  //   stepper.setTarget(stepper.getTarget() + 5); // в шагах
+  // }
+  // else if (((Test_Temp - Press_Temp) > 0))
+  // {
+  //   // закрыть
+  //   // изменить направление вращения
+  //   if (stepper.getTarget() < 50)
+  //     return;
+  //   stepper.setTarget(stepper.getTarget() - 5); // в шагах
+  // }
+  // else
+  // {
+  //   return;
+  // }
+
+  if (Cansider_Temp < (Cansider_Sp - 5))
+  {
+    // stepper.setTarget(0); // в шагах
+    digitalWrite(Valve_1_Hot, HIGH);
+  }
+
+  if (((int(Cansider_Temp - Cansider_Sp)) >= -10) && ((Cansider_Temp - Cansider_Sp) <= 10))
+  {
+    regulator.input = Test_Temp - Press_Temp - int(Cansider_Sp); // сообщаем регулятору текущую перегрев
+    stepper.setTarget(regulator.getResultTimer());
+  }
+  else
+  {
+    if (PressureTransducer > 660)
+    {
+      if (stepper.getTarget() > 50)
+        stepper.setTarget(stepper.getTarget() - 5); // в шагах
+    }
+    else if (PressureTransducer < 660)
+    {
+      if (stepper.getTarget() < 450)
+        stepper.setTarget(stepper.getTarget() + 5);
+    }
+  }
 }
 
 // бегущее среднее
@@ -804,7 +827,7 @@ void Check_Pressure()
   //
 
   PressureTransducer = expRunningAverage2(PressureTransducer);
-  PressureTransducer = ((Pressure / (4042.0 - 804.0)) * (PressureTransducer - 804.0) + (-1.0 * 14.504)) * 10.0; // 4042ацп-20мА //804ацп-4мА
+  PressureTransducer = ((Pressure / (3810.0 - 752.0)) * (PressureTransducer - 752.0) + (-1.0 * 14.504)) * 10.0; // 3808ацп-20мА //752-4мА
 
   if (Chiler_On == 0)
   {
@@ -1032,7 +1055,7 @@ void readTemp()
   Cansider_Temp = Cansider_Temp >> 2;
 
   Cansider_Temp = expRunningAverage(Cansider_Temp);
-  Cansider_Temp = (Cansider_Temp / 4096.0 * 1.025 * 1000.0);
+  Cansider_Temp = (Cansider_Temp / 4096.0 * 1.094 * 1000.0);
 
   if (sensor1.readTemp())
     Fan_Ctrl_Temp = sensor1.getTemp() * 10.0;
