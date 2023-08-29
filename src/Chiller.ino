@@ -5,6 +5,8 @@
 // #define test
 // #define FanProtec
 
+#define ADC_REF 1.094
+
 #define Pump_Off 60 // Задержка выключения помпы в сек.
 
 // #define Pressure (11.0*14.504 - (-0.5*14.504))    //PAA-21Y 81556.11
@@ -783,7 +785,8 @@ void Check_Pressure()
   //
 
   PressureTransducer = expRunningAverage2(PressureTransducer);
-  PressureTransducer = ((Pressure / (3810.0 - 752.0)) * (PressureTransducer - 752.0) + (-1.0 * 14.504)) * 10.0; // 3808ацп-20мА //752-4мА
+  // PressureTransducer = ((Pressure / (3810.0 - 752.0)) * (PressureTransducer - 752.0) + (-1.0 * 14.504)) * 10.0; // 3808ацп-20мА //752-4мА
+  PressureTransducer = ((Pressure / ((50.8 / (ADC_REF / 4096.0 / 0.020)) - (50.8 / (ADC_REF / 4096.0 / 0.004)))) * (PressureTransducer - (50.8 / (ADC_REF / 4096.0 / 0.004))) + (-1.0 * 14.504)) * 10.0; // 3808ацп-20мА //752-4мА
 
   if (Chiler_On == 0)
   {
@@ -1011,7 +1014,7 @@ void readTemp()
   Cansider_Temp = Cansider_Temp >> 2;
 
   Cansider_Temp = expRunningAverage(Cansider_Temp);
-  Cansider_Temp = (Cansider_Temp / 4096.0 * 1.094 * 1000.0);
+  Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
 
   if (sensor1.readTemp())
     Fan_Ctrl_Temp = sensor1.getTemp() * 10.0;
