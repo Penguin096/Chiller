@@ -163,17 +163,17 @@ int16_t simEEPdata[] = {
     50,   // increment by 5.0 deg  °c
     11,   // 10 entries in the lookup table
     0,    // average step of ADC reading
-    360,  //-25.0 deg °C
-    435,  //-20.0
-    524,  //-15
-    625,  //-10
-    740,  //-5
-    870,  // 0
-    1018, // 5
-    1184, // 10
-    1368, // 15
-    1572, // 20
-    1800, // 25.0 deg °C
+    218,  // 360,  //-25.0 deg °C
+    296,  // 435,  //-20.0
+    384,  // 524,  //-15
+    487,  // 625,  //-10
+    603,  // 740,  //-5
+    734,  // 870,  // 0
+    882,  // 1018, // 5
+    1046, // 1184, // 10
+    1230, // 1368, // 15
+    1434, // 1572, // 20
+    1662, // 1800, // 25.0 deg °C
 };
 
 void USART1_Init()
@@ -564,49 +564,6 @@ void loop()
     {
       Chiler_On = false;
     }
-
-    // if (digitalRead(Valve_2_Cold))
-    // {
-    //   Press_Temp = Lookup();
-    //   if ((Test_Temp - 0.3 * Press_Temp - 0.7 * int(Cansider_Sp)) > 0)
-    //   {
-    //     // открыть
-    //     //  изменить направление вращения
-    //     digitalWrite(PIN_DIR, HIGH);
-    //     // сделать 5 оборот
-    //     for (int j = 0; j < 5; j++)
-    //     {
-    //       wdt_reset();
-    //       if (countstep < 480)
-    //       {
-    //         digitalWrite(PIN_STEP, HIGH);
-    //         delay(SPEED);
-    //         digitalWrite(PIN_STEP, LOW);
-    //         delay(SPEED);
-    //         countstep = countstep + 1;
-    //       }
-    //     }
-    //   }
-    //   else if ((Test_Temp - 0.3 * Press_Temp - 0.7 * int(Cansider_Sp)) < 0)
-    //   {
-    //     // закрыть
-    //     //  изменить направление вращения
-    //     digitalWrite(PIN_DIR, LOW);
-    //     // сделать 5 оборот
-    //     for (int j = 0; j < 5; j++)
-    //     {
-    //       wdt_reset();
-    //       if (countstep > 50)
-    //       {
-    //         digitalWrite(PIN_STEP, HIGH);
-    //         delay(SPEED);
-    //         digitalWrite(PIN_STEP, LOW);
-    //         delay(SPEED);
-    //         countstep = countstep - 1;
-    //       }
-    //     }
-    //   }
-    // }
   }
 
   if ((millis() - time_01) > 100)
@@ -703,19 +660,18 @@ int16_t Lookup()
 
   int16_t dm_902;
   if (int(PressureTransducer) < simEEPdata[4])
-  { // less than the first entry of Lookup table (LUT)
-    // dm_902 = (PressureTransducer - simEEPdata[4]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from first LUT data
-    // dm_902 = dm_902 + simEEPdata[0];                                               // compute the temperature
-    dm_902 = -250;
+  {                                                                                // less than the first entry of Lookup table (LUT)
+    dm_902 = (PressureTransducer - simEEPdata[4]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from first LUT data
+    dm_902 = dm_902 + simEEPdata[0];                                               // compute the temperature
     return dm_902;
   }
   else if (int(PressureTransducer) > simEEPdata[3 + simEEPdata[2]])
-  { // more than the last entry of Lookup table (LUT)
-    // dm_902 = (PressureTransducer - simEEPdata[3 + simEEPdata[2]]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from last LUT data
-    // dm_902 = simEEPdata[0] + simEEPdata[1] * (simEEPdata[2] - 1) + dm_902;                         // compute the temperature
-    dm_902 = 250;
+  {                                                                                                // more than the last entry of Lookup table (LUT)
+    dm_902 = (PressureTransducer - simEEPdata[3 + simEEPdata[2]]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from last LUT data
+    dm_902 = simEEPdata[0] + simEEPdata[1] * (simEEPdata[2] - 1) + dm_902;                         // compute the temperature
     return dm_902;
   }
+
   int I = int(PressureTransducer) / simEEPdata[3] - 5; // find approximate location to lookup
   // simEEPdata[2] is the average ADC increment per table entry
   if (I < 1 || I > simEEPdata[2])
