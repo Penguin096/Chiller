@@ -274,7 +274,7 @@ void setup()
 
   regulator.setDirection(REVERSE); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
   regulator.setLimits(50, 450);    // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
-  regulator.setpoint = 0;          // сообщаем регулятору, которую он должен поддерживать
+  regulator.setpoint = 60;          // сообщаем регулятору, которую он должен поддерживать
 
   wdt_reset();
   // delay(500);
@@ -727,24 +727,24 @@ void stepping()
     digitalWrite(Valve_1_Hot, HIGH);
   }
 
-  if (((int(Cansider_Temp - Cansider_Sp)) >= -10) && ((Cansider_Temp - Cansider_Sp) <= 10))
-  {
-    regulator.input = Test_Temp - Press_Temp - int(Cansider_Sp); // сообщаем регулятору текущую перегрев
+  // if (((int(Cansider_Temp - Cansider_Sp)) >= -10) && ((Cansider_Temp - Cansider_Sp) <= 10))
+  // {
+    regulator.input = Test_Temp - Press_Temp; // сообщаем регулятору текущий перегрев
     stepper.setTarget(regulator.getResultTimer());
-  }
-  else
-  {
-    if (PressureTransducer > 660)
-    {
-      if (stepper.getTarget() > 50)
-        stepper.setTarget(stepper.getTarget() - 5); // в шагах
-    }
-    else if (PressureTransducer < 660)
-    {
-      if (stepper.getTarget() < 450)
-        stepper.setTarget(stepper.getTarget() + 5);
-    }
-  }
+  // }
+  // else
+  // {
+  //   if (PressureTransducer > 660)
+  //   {
+  //     if (stepper.getTarget() > 50)
+  //       stepper.setTarget(stepper.getTarget() - 5); // в шагах
+  //   }
+  //   else if (PressureTransducer < 660)
+  //   {
+  //     if (stepper.getTarget() < 450)
+  //       stepper.setTarget(stepper.getTarget() + 5);
+  //   }
+  // }
 }
 
 // бегущее среднее
