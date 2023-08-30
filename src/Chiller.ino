@@ -96,8 +96,8 @@ EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 #include "GyverStepper.h"
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
 
-#include "GyverPID.h"
-GyverPID regulator(15.0, 150.0, 5.0); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
+// #include "GyverPID.h"
+// GyverPID regulator(30.0, 0.0, 0.0); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
 
 #define DS_PIN A3 // пин для термометров
 
@@ -132,17 +132,20 @@ bool Fan;
 
 uint16_t PressureTransducer;
 uint16_t Cansider_Temp;
-uint16_t Fan_Ctrl_Temp;
+int16_t Fan_Ctrl_Temp;
 int16_t Test_Temp;
 int16_t Press_Temp;
 
 uint32_t time_05;
 uint32_t time_01;
-uint32_t time_10;
+uint32_t time_1;
+uint32_t time_30;
 
+#ifdef FanProtec
 uint8_t Fan1_Off;
 uint8_t Fan2_Off;
 uint8_t Fan3_Off;
+#endif
 
 volatile uint8_t PumpDelay_Off;
 
@@ -159,6 +162,14 @@ volatile uint32_t Comm_timeout = micros();
 volatile uint32_t varTime = millis();
 
 uint32_t valveTime = millis();
+
+uint32_t pid_Timer = millis();
+float prevInput = 0;
+float Kp = 9.0;       // коэффициент P
+float Ki = 1.0;       // коэффициент I
+float Kd = 0.01;      // коэффициент D
+float integral = 0.0; // интегральная сумма
+float setpoint = 10.0;
 
 int16_t simEEPdata[] = {
     -250, // starting temperature = -20.0 deg °C
@@ -272,9 +283,9 @@ void setup()
   stepper.setCurrent(0);
   stepper.setTarget(50); // в шагах
 
-  regulator.setDirection(REVERSE); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
-  regulator.setLimits(50, 450);    // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
-  regulator.setpoint = 60;          // сообщаем регулятору, которую он должен поддерживать
+  // regulator.setDirection(REVERSE); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
+  // regulator.setLimits(50, 450);    // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
+  // regulator.setpoint = 60;         // сообщаем регулятору, которую он должен поддерживать
 
   wdt_reset();
   // delay(500);
@@ -405,13 +416,16 @@ void parsing()
     switch (incoming)
     {
     case 'p':
-      regulator.Kp = value;
+      Kp = value;
       break;
     case 'i':
-      regulator.Ki = value;
+      Ki = value;
       break;
     case 'd':
-      regulator.Kd = value;
+      Kd = value;
+      break;
+    case 's':
+      setpoint = value;
       break;
     }
   }
@@ -422,10 +436,66 @@ void loop()
   wdt_reset();
   stepper.tick();
   parsing();
-
-  if ((millis() - time_10) > 1000)
+  // stepper.setTarget(regulator.getResultTimer());
+  if ((millis() - pid_Timer) >= 100)
   {
-    time_10 = millis();
+    pid_Timer = millis();
+    // возвращает новое значение при вызове (если используем свой таймер с периодом dt!)
+
+    float error = setpoint - float(Test_Temp - Press_Temp);        // ошибка регулирования
+    float delta_input = prevInput - float(Test_Temp - Press_Temp); // изменение входного сигнала за dt
+    prevInput = float(Test_Temp - Press_Temp);                     // запомнили предыдущее
+
+    bool _direction = 1;
+    bool _mode = 0;
+    float _dt_s = 0.1; // время итерации в с
+
+    if (_direction)
+    { // смена направления
+      error = -error;
+      delta_input = -delta_input;
+    }
+
+    float output = _mode ? 0 : (error * Kp); // пропорциональая составляющая
+    output += delta_input * Kd / _dt_s;      // дифференциальная составляющая
+
+    integral += error * Ki * _dt_s; // обычное суммирование инт. суммы
+
+    if (_mode)
+      integral += delta_input * Kp;         // режим пропорционально скорости
+    integral = constrain(integral, 1, 450); // ограничиваем инт. сумму
+    output += integral;                     // интегральная составляющая
+    output = constrain(output, 1, 450);     // ограничиваем выход
+    if ((PressureTransducer > 660) && (Cansider_Temp > Cansider_Sp))
+    {
+      if (stepper.getTarget() > 0)
+        stepper.setTarget(stepper.getTarget() - 5); // в шагах
+    }
+    else
+    {
+      stepper.setTarget(int(output));
+    }
+  }
+
+  if ((millis() - time_30) > 2000)
+  {
+    time_30 = millis();
+
+    if (Cansider_Temp > Cansider_Sp)
+    {
+      if (setpoint > 20)
+        setpoint = setpoint - 10;
+    }
+    else if (Cansider_Temp < Cansider_Sp)
+    {
+      if (setpoint < 200)
+        setpoint = setpoint + 10;
+    }
+  }
+
+  if ((millis() - time_1) > 1000)
+  {
+    time_1 = millis();
 
     if (PumpDelay_Off)
       PumpDelay_Off--;
@@ -443,6 +513,7 @@ void loop()
     if (Wire.endTransmission())
       lcd.init();
 
+#ifdef FanProtec
     if (Fan1_Off >= 20 || Fan2_Off >= 20 || Fan3_Off >= 20)
     {
       Fan = true;
@@ -452,6 +523,7 @@ void loop()
     {
       Fan = false;
     }
+#endif
 
     if ((millis() - Comm_timeout) > 3000)
     {
@@ -530,9 +602,14 @@ void loop()
   {
     time_05 = millis();
 
-    Serial.print(Cansider_Sp);
+    Serial.print(setpoint);
     Serial.print(',');
     Serial.print(Test_Temp - Press_Temp);
+    Serial.print(',');
+    Serial.print(Test_Temp);
+    Serial.print(',');
+    Serial.print(Press_Temp);
+    Serial.print(',');
     Serial.println();
 
     if (Chiler_On)
@@ -662,15 +739,15 @@ int16_t Lookup()
 
   int16_t dm_902;
   if (int(PressureTransducer) < simEEPdata[4])
-  {                                                                                // less than the first entry of Lookup table (LUT)
-    dm_902 = (PressureTransducer - simEEPdata[4]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from first LUT data
-    dm_902 = dm_902 + simEEPdata[0];                                               // compute the temperature
+  {                                                                                     // less than the first entry of Lookup table (LUT)
+    dm_902 = (int(PressureTransducer) - simEEPdata[4]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from first LUT data
+    dm_902 = dm_902 + simEEPdata[0];                                                    // compute the temperature
     return dm_902;
   }
   else if (int(PressureTransducer) > simEEPdata[3 + simEEPdata[2]])
-  {                                                                                                // more than the last entry of Lookup table (LUT)
-    dm_902 = (PressureTransducer - simEEPdata[3 + simEEPdata[2]]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from last LUT data
-    dm_902 = simEEPdata[0] + simEEPdata[1] * (simEEPdata[2] - 1) + dm_902;                         // compute the temperature
+  {                                                                                                     // more than the last entry of Lookup table (LUT)
+    dm_902 = (int(PressureTransducer) - simEEPdata[3 + simEEPdata[2]]) * simEEPdata[1] / simEEPdata[3]; // extrapolate from last LUT data
+    dm_902 = simEEPdata[0] + simEEPdata[1] * (simEEPdata[2] - 1) + dm_902;                              // compute the temperature
     return dm_902;
   }
 
@@ -686,7 +763,7 @@ int16_t Lookup()
     I = I + 1;
   }
 
-  dm_902 = (PressureTransducer - simEEPdata[3 + I - 1]) * simEEPdata[1] / (simEEPdata[3 + I] - simEEPdata[3 + I - 1]);
+  dm_902 = (int(PressureTransducer) - simEEPdata[3 + I - 1]) * simEEPdata[1] / (simEEPdata[3 + I] - simEEPdata[3 + I - 1]);
   dm_902 = simEEPdata[0] + simEEPdata[1] * (I - 2) + dm_902; // compute actual value
   return dm_902;
 }
@@ -721,7 +798,7 @@ void stepping()
   //   return;
   // }
 
-  if (Cansider_Temp < (Cansider_Sp - 5))
+  if (Cansider_Temp < (Cansider_Sp - 10))
   {
     // stepper.setTarget(0); // в шагах
     digitalWrite(Valve_1_Hot, HIGH);
@@ -729,8 +806,18 @@ void stepping()
 
   // if (((int(Cansider_Temp - Cansider_Sp)) >= -10) && ((Cansider_Temp - Cansider_Sp) <= 10))
   // {
-    regulator.input = Test_Temp - Press_Temp; // сообщаем регулятору текущий перегрев
-    stepper.setTarget(regulator.getResultTimer());
+  // regulator.input = float(Test_Temp - Press_Temp); // сообщаем регулятору текущий перегрев
+  // if ((Test_Temp - Press_Temp) > 100)
+  // {
+  //   if (stepper.getTarget() < 450)
+  //     stepper.setTarget(stepper.getTarget() + 5);
+  // }
+  // else if ((Test_Temp - Press_Temp) < 100)
+  // {
+  //   if (stepper.getTarget() > 50)
+  //     stepper.setTarget(stepper.getTarget() - 5); // в шагах
+  // }
+  // stepper.setTarget(regulator.getResultTimer());
   // }
   // else
   // {
@@ -1017,14 +1104,16 @@ void readTemp()
   Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
 
   if (sensor1.readTemp())
-    Fan_Ctrl_Temp = sensor1.getTemp() * 10.0;
+    Fan_Ctrl_Temp = int(sensor1.getTemp() * 10.0);
   else
-    Fan_Ctrl_Temp = 999;
+    // Fan_Ctrl_Temp = 999;
+    ;
 
   if (sensor2.readTemp())
-    Test_Temp = sensor2.getTemp() * 10.0;
+    Test_Temp = int(sensor2.getTemp() * 10.0);
   else
-    Test_Temp = 999;
+    // Test_Temp = 999;
+    ;
 
   sensor1.requestTemp(); // Запрашиваем преобразование температуры, но не ждем.
   sensor2.requestTemp();
