@@ -2,7 +2,6 @@
 // INPUT:  D7...D9
 // ANALOG: A0, A2, A6
 
-// #define test
 // #define FanProtec
 
 #define ADC_REF 1.094
@@ -107,12 +106,6 @@ byte DS18B20_3[] = {0x28, 0xEB, 0xDD, 0x57, 0x04, 0xE1, 0x3C, 0x11};
 MicroDS18B20<DS_PIN, fanThermometer> sensor1; // Создаем термометр с адресацией
 MicroDS18B20<DS_PIN, DS18B20_3> sensor2;      // Создаем термометр с адресацией
 
-#ifdef test
-#include "GyverRelay.h"
-// установка, гистерезис, направление регулирования
-GyverRelay regulator(NORMAL);
-#endif
-
 volatile uint8_t Cansider_Sp; // Уставка
 uint8_t Cansider_Gb = 10;     // Гистерезис
 uint16_t Temp_Low_Power = 260;
@@ -129,6 +122,7 @@ bool LowPressure;
 bool CriticalPressure;
 bool Freez_Temp;
 bool Fan;
+bool TestStart;
 
 uint16_t PressureTransducer;
 uint16_t Cansider_Temp;
@@ -139,7 +133,7 @@ int16_t Press_Temp;
 uint32_t time_05;
 uint32_t time_01;
 uint32_t time_1;
-uint32_t time_30;
+uint32_t time_20;
 
 #ifdef FanProtec
 uint8_t Fan1_Off;
@@ -164,12 +158,13 @@ volatile uint32_t varTime = millis();
 uint32_t valveTime = millis();
 
 uint32_t pid_Timer = millis();
+
 float prevInput = 0;
 float Kp = 9.0;       // коэффициент P
 float Ki = 1.0;       // коэффициент I
 float Kd = 0.01;      // коэффициент D
 float integral = 0.0; // интегральная сумма
-float setpoint = 10.0;
+float setpoint = 200.0;
 
 int16_t simEEPdata[] = {
     -250, // starting temperature = -20.0 deg °C
@@ -260,11 +255,6 @@ void setup()
   if (Cansider_Sp < 35 || Cansider_Sp > 250)
     Cansider_Sp = 100;
 
-#ifdef test
-  regulator.setpoint = Cansider_Sp; // установка (ставим на 10 градусов)
-  regulator.hysteresis = 10;        // ширина гистерезиса 1 градус
-  regulator.k = 0.5;                // коэффициент обратной связи (подбирается по факту)
-#endif
   wdt_reset();
 
   int N = simEEPdata[2];
@@ -384,8 +374,6 @@ ISR(USART1_RX_vect) // Обрабатываем прерывание по пос
           }
           PORTB &= ~(1 << PB5);
         }
-
-        // ReadOk = false;
       }
     }
   }
@@ -436,7 +424,8 @@ void loop()
   wdt_reset();
   stepper.tick();
   parsing();
-  // stepper.setTarget(regulator.getResultTimer());
+
+  //////////////////ПИД руглятор//////////////////////
   if ((millis() - pid_Timer) >= 100)
   {
     pid_Timer = millis();
@@ -476,20 +465,23 @@ void loop()
       stepper.setTarget(int(output));
     }
   }
+  //////////////////////////////////////////////////
 
-  if ((millis() - time_30) > 2000)
+  if ((millis() - time_20) > 2000)
   {
-    time_30 = millis();
-
-    if (Cansider_Temp > Cansider_Sp)
+    time_20 = millis();
+    if (Chiler_On)
     {
-      if (setpoint > 20)
-        setpoint = setpoint - 10;
-    }
-    else if (Cansider_Temp < Cansider_Sp)
-    {
-      if (setpoint < 200)
-        setpoint = setpoint + 10;
+      if (Cansider_Temp > Cansider_Sp)
+      {
+        if (setpoint > 20)
+          setpoint = setpoint - 10;
+      }
+      else if (Cansider_Temp < Cansider_Sp)
+      {
+        if (setpoint < 200)
+          setpoint = setpoint + 10;
+      }
     }
   }
 
@@ -525,7 +517,7 @@ void loop()
     }
 #endif
 
-    if ((millis() - Comm_timeout) > 3000)
+    if (((millis() - Comm_timeout) > 3000) && (TestStart == false))
     {
       reserved[0] |= COOLING_COMM_FAULT;
       Chiler_On = false;
@@ -556,13 +548,12 @@ void loop()
         Error = "Flow low";
       else if (LowPressure)
         Error = "Low Pressure";
+      else if (reserved[0] & COOLING_COMM_FAULT)
+        Error = "Comm fault";
       else if (reserved[0] & CL_WATER_HEATING)
         Error = "ON";
       else if (reserved[0] & CL_WATER_OFF)
         Error = "OFF";
-      else if (reserved[0] & COOLING_COMM_FAULT)
-        Error = "Comm fault";
-
       else
         Error = "None";
       lcd.print(Error);
@@ -631,9 +622,11 @@ void loop()
         digitalWrite(PUMP, LOW);
       reserved[0] |= CL_WATER_OFF;
     }
+
     readTemp();
     Control_Values();
     Control_Fan();
+
     if (CriticalPressure)
     {
       Chiler_On = false;
@@ -648,12 +641,19 @@ void loop()
   if ((millis() - time_01) > 100)
   {
     time_01 = millis();
+
     Check_Pressure();
     Press_Temp = Lookup();
-    stepping();
+
     if (Chiler_On)
     {
       Chiller_Protec();
+
+      if (Cansider_Temp < (Cansider_Sp - 10))
+      {
+        digitalWrite(Valve_1_Hot, HIGH);
+      }
+
 #ifdef FanProtec
       if ((1 << PD3) & PIND)
       {
@@ -704,9 +704,6 @@ void loop()
     lcd.setCursor(0, 0);
     lcd.print("Set:");
     lcd.print(Cansider_Sp / 10.0, 1);
-#ifdef test
-    regulator.setpoint = Cansider_Sp;
-#endif
   }
   // разворачиваем шаг для изменения в обратную сторону
   // передаём количество предварительных кликов
@@ -726,6 +723,7 @@ void loop()
     }
     else
     {
+      TestStart = true;
       Chiler_On = true;
       PCICR |= (1 << PCIE0); // прерывания для FS
       varTime = millis();    // Сбрасываем счётчик и сохраняем время расчёта
@@ -766,72 +764,6 @@ int16_t Lookup()
   dm_902 = (int(PressureTransducer) - simEEPdata[3 + I - 1]) * simEEPdata[1] / (simEEPdata[3 + I] - simEEPdata[3 + I - 1]);
   dm_902 = simEEPdata[0] + simEEPdata[1] * (I - 2) + dm_902; // compute actual value
   return dm_902;
-}
-
-void stepping()
-{
-  // if ((Cansider_Temp < Cansider_Sp) && Chiler_On)
-  // {
-  //   digitalWrite(Valve_1_Hot, HIGH);
-  //   // закрыть
-  //   stepper.setTarget(0); // в шагах
-  // }
-  // // else if (((Test_Temp - Press_Temp) < 0) || (PressureTransducer < 600) || ((Cansider_Temp < Cansider_Sp) && (PressureTransducer < 900)))
-  // else if (((Test_Temp - Press_Temp) < 0) || (PressureTransducer < 600) || !Chiler_On)
-  // {
-  //   // открыть
-  //   // изменить направление вращения
-  //   if (stepper.getTarget() > 450)
-  //     return;
-  //   stepper.setTarget(stepper.getTarget() + 5); // в шагах
-  // }
-  // else if (((Test_Temp - Press_Temp) > 0))
-  // {
-  //   // закрыть
-  //   // изменить направление вращения
-  //   if (stepper.getTarget() < 50)
-  //     return;
-  //   stepper.setTarget(stepper.getTarget() - 5); // в шагах
-  // }
-  // else
-  // {
-  //   return;
-  // }
-
-  if (Cansider_Temp < (Cansider_Sp - 10))
-  {
-    // stepper.setTarget(0); // в шагах
-    digitalWrite(Valve_1_Hot, HIGH);
-  }
-
-  // if (((int(Cansider_Temp - Cansider_Sp)) >= -10) && ((Cansider_Temp - Cansider_Sp) <= 10))
-  // {
-  // regulator.input = float(Test_Temp - Press_Temp); // сообщаем регулятору текущий перегрев
-  // if ((Test_Temp - Press_Temp) > 100)
-  // {
-  //   if (stepper.getTarget() < 450)
-  //     stepper.setTarget(stepper.getTarget() + 5);
-  // }
-  // else if ((Test_Temp - Press_Temp) < 100)
-  // {
-  //   if (stepper.getTarget() > 50)
-  //     stepper.setTarget(stepper.getTarget() - 5); // в шагах
-  // }
-  // stepper.setTarget(regulator.getResultTimer());
-  // }
-  // else
-  // {
-  //   if (PressureTransducer > 660)
-  //   {
-  //     if (stepper.getTarget() > 50)
-  //       stepper.setTarget(stepper.getTarget() - 5); // в шагах
-  //   }
-  //   else if (PressureTransducer < 660)
-  //   {
-  //     if (stepper.getTarget() < 450)
-  //       stepper.setTarget(stepper.getTarget() + 5);
-  //   }
-  // }
 }
 
 // бегущее среднее
@@ -1019,27 +951,29 @@ void Control_Fan()
   unsigned int Fan_PWM;
   if (Chiler_On)
   {
-    if (Fan_Ctrl_Temp <= Temp_Low_Power)
-    {
-      Fan_PWM = Fan_PWM_Low;
-    }
-    else if (Fan_Ctrl_Temp >= Temp_High_Power)
-    {
-      Fan_PWM = 255;
-    }
-    else
-    {
-      Fan_PWM = Fan_PWM_Low + ((Fan_Ctrl_Temp - Temp_Low_Power) * ((255 - Fan_PWM_Low) / (Temp_High_Power - Temp_Low_Power)));
+    //   if (Fan_Ctrl_Temp <= Temp_Low_Power)
+    //   {
+    //     Fan_PWM = Fan_PWM_Low;
+    //   }
+    //   else if (Fan_Ctrl_Temp >= Temp_High_Power)
+    //   {
+    //     Fan_PWM = 255;
+    //   }
+    //   else
+    //   {
+    //     Fan_PWM = Fan_PWM_Low + ((Fan_Ctrl_Temp - Temp_Low_Power) * ((255 - Fan_PWM_Low) / (Temp_High_Power - Temp_Low_Power)));
 
-      if (Fan_PWM > 255)
-      {
-        Fan_PWM = 255;
-      }
-      else if (Fan_PWM < 0)
-      {
-        Fan_PWM = 0;
-      }
-    }
+    // if (Fan_PWM > 255)
+    // {
+    //   Fan_PWM = 255;
+    // }
+    // else if (Fan_PWM < 0)
+    // {
+    //   Fan_PWM = 0;
+    // }
+    // }
+
+    Fan_PWM = map(Fan_Ctrl_Temp, Temp_Low_Power, Temp_High_Power, Fan_PWM_Low, 255);
   }
   else
   {
@@ -1053,7 +987,6 @@ void Control_Values()
 {
   if (Chiler_On)
   {
-#ifndef test
     if (Cansider_Temp > Cansider_Sp)
     {
       digitalWrite(Valve_2_Cold, HIGH);
@@ -1064,24 +997,12 @@ void Control_Values()
       digitalWrite(Valve_2_Cold, LOW);
       digitalWrite(Valve_1_Hot, HIGH);
     }
-#else
-    regulator.input = Cansider_Temp; // сообщаем регулятору текущую температуру
-    if (regulator.getResult())
-    {
-      digitalWrite(Valve_2_Cold, HIGH);
-      digitalWrite(Valve_1_Hot, LOW);
-    }
-    else
-    {
-      digitalWrite(Valve_2_Cold, LOW);
-      digitalWrite(Valve_1_Hot, HIGH);
-    }
-#endif
   }
   else
   {
     digitalWrite(Valve_1_Hot, HIGH);
     digitalWrite(Valve_2_Cold, HIGH);
+    TestStart = false;
   }
 }
 
@@ -1117,13 +1038,4 @@ void readTemp()
 
   sensor1.requestTemp(); // Запрашиваем преобразование температуры, но не ждем.
   sensor2.requestTemp();
-
-  if (Cansider_Temp < 0 || Cansider_Temp > 999)
-  {
-    Cansider_Temp = 999;
-  }
-  if (Fan_Ctrl_Temp < 0 || Fan_Ctrl_Temp > 999)
-  {
-    Fan_Ctrl_Temp = 999;
-  }
 }
