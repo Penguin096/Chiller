@@ -95,8 +95,8 @@ EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 #include "GyverStepper.h"
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
 
-// #include "GyverPID.h"
-// GyverPID regulator(30.0, 0.0, 0.0); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
+#include "GyverPID.h"
+GyverPID regulator(9.0, 1.0, 0.01); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
 
 #define DS_PIN A3 // пин для термометров
 
@@ -157,14 +157,7 @@ volatile uint32_t varTime = millis();
 
 uint32_t valveTime = millis();
 
-uint32_t pid_Timer = millis();
-
-float prevInput = 0;
-float Kp = 9.0;       // коэффициент P
-float Ki = 1.0;       // коэффициент I
-float Kd = 0.01;      // коэффициент D
-float integral = 0.0; // интегральная сумма
-float setpoint = 200.0;
+int pos = 0;
 
 int16_t simEEPdata[] = {
     -250, // starting temperature = -20.0 deg °C
@@ -273,12 +266,11 @@ void setup()
   stepper.setCurrent(0);
   stepper.setTarget(50); // в шагах
 
-  // regulator.setDirection(REVERSE); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
-  // regulator.setLimits(50, 450);    // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
-  // regulator.setpoint = 60;         // сообщаем регулятору, которую он должен поддерживать
+  regulator.setDirection(NORMAL); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
+  regulator.setLimits(0, 450);     // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
+  regulator.setpoint = 600;        // сообщаем регулятору, которую он должен поддерживать
 
   wdt_reset();
-  // delay(500);
   lcd.clear();
 }
 
@@ -404,16 +396,16 @@ void parsing()
     switch (incoming)
     {
     case 'p':
-      Kp = value;
+      regulator.Kp = value;
       break;
     case 'i':
-      Ki = value;
+      regulator.Ki = value;
       break;
     case 'd':
-      Kd = value;
+      regulator.Kd = value;
       break;
     case 's':
-      setpoint = value;
+      regulator.setpoint = value;
       break;
     }
   }
@@ -424,63 +416,26 @@ void loop()
   wdt_reset();
   stepper.tick();
   parsing();
+  pos = int(regulator.getResultTimer());
 
-  //////////////////ПИД руглятор//////////////////////
-  if ((millis() - pid_Timer) >= 100)
-  {
-    pid_Timer = millis();
-    // возвращает новое значение при вызове (если используем свой таймер с периодом dt!)
-
-    float error = setpoint - float(Test_Temp - Press_Temp);        // ошибка регулирования
-    float delta_input = prevInput - float(Test_Temp - Press_Temp); // изменение входного сигнала за dt
-    prevInput = float(Test_Temp - Press_Temp);                     // запомнили предыдущее
-
-    bool _direction = 1;
-    bool _mode = 0;
-    float _dt_s = 0.1; // время итерации в с
-
-    if (_direction)
-    { // смена направления
-      error = -error;
-      delta_input = -delta_input;
-    }
-
-    float output = _mode ? 0 : (error * Kp); // пропорциональая составляющая
-    output += delta_input * Kd / _dt_s;      // дифференциальная составляющая
-
-    integral += error * Ki * _dt_s; // обычное суммирование инт. суммы
-
-    if (_mode)
-      integral += delta_input * Kp;         // режим пропорционально скорости
-    integral = constrain(integral, 1, 450); // ограничиваем инт. сумму
-    output += integral;                     // интегральная составляющая
-    output = constrain(output, 1, 450);     // ограничиваем выход
-    if ((PressureTransducer > 660) && (Cansider_Temp > Cansider_Sp))
-    {
-      if (stepper.getTarget() > 0)
-        stepper.setTarget(stepper.getTarget() - 5); // в шагах
-    }
-    else
-    {
-      stepper.setTarget(int(output));
-    }
-  }
-  //////////////////////////////////////////////////
-
-  if ((millis() - time_20) > 2000)
+  if ((millis() - time_20) > 3000)
   {
     time_20 = millis();
     if (Chiler_On)
     {
       if (Cansider_Temp > Cansider_Sp)
       {
-        if (setpoint > 20)
-          setpoint = setpoint - 10;
+        // if (regulator.setpoint > 100)
+        //   regulator.setpoint = regulator.setpoint - 10;
+        if (regulator.setpoint > 670)
+          regulator.setpoint = regulator.setpoint - 10;
       }
       else if (Cansider_Temp < Cansider_Sp)
       {
-        if (setpoint < 200)
-          setpoint = setpoint + 10;
+        // if (regulator.setpoint < 250)
+        //   regulator.setpoint = regulator.setpoint + 10;
+        if (regulator.setpoint < 900)
+          regulator.setpoint = regulator.setpoint + 10;
       }
     }
   }
@@ -593,7 +548,7 @@ void loop()
   {
     time_05 = millis();
 
-    Serial.print(setpoint);
+    Serial.print(regulator.setpoint);
     Serial.print(',');
     Serial.print(Test_Temp - Press_Temp);
     Serial.print(',');
@@ -644,6 +599,24 @@ void loop()
 
     Check_Pressure();
     Press_Temp = Lookup();
+
+    // regulator.input = float(Test_Temp - Press_Temp);
+    regulator.input = float(PressureTransducer);
+
+    // if ((PressureTransducer > 730) && (Cansider_Temp > Cansider_Sp))
+    // {
+    //   if (stepper.getTarget() > 0)
+    //     stepper.setTarget(stepper.getTarget() - 5); // в шагах
+    // }
+    // else
+    if (digitalRead(Valve_1_Hot))
+    {
+      stepper.setTarget(200); // в шагах
+    }
+    else
+    {
+      stepper.setTarget(pos);
+    }
 
     if (Chiler_On)
     {
@@ -973,7 +946,9 @@ void Control_Fan()
     // }
     // }
 
-    Fan_PWM = map(Fan_Ctrl_Temp, Temp_Low_Power, Temp_High_Power, Fan_PWM_Low, 255);
+    Fan_PWM = map(long(Fan_Ctrl_Temp), long(Temp_Low_Power), long(Temp_High_Power), long(Fan_PWM_Low), long(255));
+    if (Fan_Ctrl_Temp >= Temp_High_Power)
+      Fan_PWM = 255;
   }
   else
   {
