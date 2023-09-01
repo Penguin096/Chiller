@@ -267,8 +267,8 @@ void setup()
   stepper.setTarget(50); // в шагах
 
   regulator.setDirection(NORMAL); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
-  regulator.setLimits(0, 450);     // пределы (ставим для 8 битного ШИМ). ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
-  regulator.setpoint = 600;        // сообщаем регулятору, которую он должен поддерживать
+  regulator.setLimits(0, 450);     // пределы. ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
+  regulator.setpoint = 670;        // сообщаем регулятору, которую он должен поддерживать
 
   wdt_reset();
   lcd.clear();
@@ -418,7 +418,7 @@ void loop()
   parsing();
   pos = int(regulator.getResultTimer());
 
-  if ((millis() - time_20) > 3000)
+  if ((millis() - time_20) > 2000)
   {
     time_20 = millis();
     if (Chiler_On)
@@ -600,15 +600,8 @@ void loop()
     Check_Pressure();
     Press_Temp = Lookup();
 
-    // regulator.input = float(Test_Temp - Press_Temp);
     regulator.input = float(PressureTransducer);
 
-    // if ((PressureTransducer > 730) && (Cansider_Temp > Cansider_Sp))
-    // {
-    //   if (stepper.getTarget() > 0)
-    //     stepper.setTarget(stepper.getTarget() - 5); // в шагах
-    // }
-    // else
     if (digitalRead(Valve_1_Hot))
     {
       stepper.setTarget(200); // в шагах
@@ -924,31 +917,27 @@ void Control_Fan()
   unsigned int Fan_PWM;
   if (Chiler_On)
   {
-    //   if (Fan_Ctrl_Temp <= Temp_Low_Power)
-    //   {
-    //     Fan_PWM = Fan_PWM_Low;
-    //   }
-    //   else if (Fan_Ctrl_Temp >= Temp_High_Power)
-    //   {
-    //     Fan_PWM = 255;
-    //   }
-    //   else
-    //   {
-    //     Fan_PWM = Fan_PWM_Low + ((Fan_Ctrl_Temp - Temp_Low_Power) * ((255 - Fan_PWM_Low) / (Temp_High_Power - Temp_Low_Power)));
+      if (Fan_Ctrl_Temp <= Temp_Low_Power)
+      {
+        Fan_PWM = Fan_PWM_Low;
+      }
+      else if (Fan_Ctrl_Temp >= Temp_High_Power)
+      {
+        Fan_PWM = 255;
+      }
+      else
+      {
+        Fan_PWM = Fan_PWM_Low + ((Fan_Ctrl_Temp - Temp_Low_Power) * ((255 - Fan_PWM_Low) / (Temp_High_Power - Temp_Low_Power)));
 
-    // if (Fan_PWM > 255)
-    // {
-    //   Fan_PWM = 255;
-    // }
-    // else if (Fan_PWM < 0)
-    // {
-    //   Fan_PWM = 0;
-    // }
-    // }
-
-    Fan_PWM = map(long(Fan_Ctrl_Temp), long(Temp_Low_Power), long(Temp_High_Power), long(Fan_PWM_Low), long(255));
-    if (Fan_Ctrl_Temp >= Temp_High_Power)
+    if (Fan_PWM > 255)
+    {
       Fan_PWM = 255;
+    }
+    else if (Fan_PWM < 0)
+    {
+      Fan_PWM = 0;
+    }
+    }
   }
   else
   {
