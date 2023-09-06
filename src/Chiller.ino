@@ -68,7 +68,7 @@
 // #define CansiderTemp A2
 // #define FanTemp A3
 // #define Pressure A0
-#define DS_PIN PA2             // пин для термометров
+#define DS_PIN PA2 // пин для термометров
 
 #define Button_PIN GPIO_PIN_13
 #define Button_GPIO_PORT GPIOC
@@ -311,7 +311,6 @@ void setup()
   // digitalWrite(PIN_DIR, LOW);
   pinMode(WL, INPUT_PULLUP); // WL
   pinMode(FS, INPUT_PULLUP); // FS
-
 #endif
 #ifdef STM32F10X_MD
   HAL_Init();
@@ -334,7 +333,7 @@ void setup()
   HAL_GPIO_Init(Valve_2_Cold_GPIO_PORT, &GPIO_InitStruct);
   GPIO_InitStruct.Pin = RS485_REDE_PIN;
   HAL_GPIO_Init(RS485_REDE_GPIO_PORT, &GPIO_InitStruct);
-  
+
   GPIO_InitStruct.Pin = Button_PIN;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
@@ -346,13 +345,6 @@ void setup()
   HAL_GPIO_Init(FS_GPIO_PORT, &GPIO_InitStruct);
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
-
-  // while (1)
-  // {
-  //   HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_PIN);
-
-  //   HAL_Delay(1000);
-  // }
 #endif
 
 #ifdef __AVR_ATmega328PB__
@@ -373,7 +365,7 @@ void setup()
   // Print a message to the LCD.
   lcd.backlight();
   lcd.setCursor(0, 0);
-  lcd.print("OrchiChiller v2");
+  lcd.print("OrchiChiller v3");
 
 #ifdef __AVR_ATmega328PB__
   // Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
