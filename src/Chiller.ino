@@ -45,12 +45,13 @@
 #define DATA_BIT EIGHT_BIT // USART Data Bit Selection
 #define RX_COMPLETE_INTERRUPT (1 << RXCIE0)
 
-#else
+#endif
+#ifdef STM32F10X_MD
 
 #include <Arduino.h>
 #include "stm32f1xx_hal.h"
 
-#define ADC_REF 1.094
+#define ADC_REF 1.200
 
 #define Button PC13
 #define Compressor PB3
@@ -228,7 +229,8 @@ void USART1_Init()
   // Enable Global Interrupts
   sei();
 }
-#else
+#endif
+#ifdef STM32F10X_MD
 void SysTick_Handler(void)
 {
   HAL_IncTick();
@@ -310,7 +312,8 @@ void setup()
   pinMode(WL, INPUT_PULLUP); // WL
   pinMode(FS, INPUT_PULLUP); // FS
 
-#else
+#endif
+#ifdef STM32F10X_MD
   HAL_Init();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
