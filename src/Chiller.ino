@@ -1,4 +1,15 @@
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
+#include <EncButton2.h>
+#include <microDS18B20.h>
+#include "GyverStepper.h"
+#include "GyverPID.h"
+
 #ifdef __AVR_ATmega328PB__
+
+#include <Arduino.h>
+#include <avr/wdt.h>
+#include <EEPROM.h>
 
 #define ADC_REF 1.094
 #define Button 2
@@ -34,31 +45,58 @@
 #define DATA_BIT EIGHT_BIT // USART Data Bit Selection
 #define RX_COMPLETE_INTERRUPT (1 << RXCIE0)
 
-#include <Arduino.h>
-#include <avr/wdt.h>
-#include <EEPROM.h>
-
 #else
 
+#include <Arduino.h>
+#include "stm32f1xx_hal.h"
+
 #define ADC_REF 1.094
-#define Button 2
-#define Compressor 5
-#define FAN 3
-#define Valve_1_Hot A1
-#define Valve_2_Cold 4
-#define WL 10
-#define FS 9
-#define RS485_REDE 13
-#define PUMP 6
+
+#define Button PC13
+#define Compressor PB3
+#define FAN PB6
+#define Valve_1_Hot PB4
+#define Valve_2_Cold PB5
+#define WL PB13
+#define FS PB12
+#define RS485_REDE PA15
+#define PUMP PB7
 // пины для подключения контактов STEP, DIR
-#define PIN_STEP 7
-#define PIN_DIR 8
+#define PIN_STEP PB10
+#define PIN_DIR PB11
 // #define CansiderTemp A2
 // #define FanTemp A3
 // #define Pressure A0
-#define DS_PIN A3 // пин для термометров
+#define DS_PIN PA2             // пин для термометров
 
-#include <Arduino.h>
+#define Button_PIN GPIO_PIN_13
+#define Button_GPIO_PORT GPIOC
+#define Compressor_PIN GPIO_PIN_3
+#define Compressor_GPIO_PORT GPIOB
+#define FAN_PIN GPIO_PIN_6
+#define FAN_GPIO_PORT GPIOB
+#define Valve_1_Hot_PIN GPIO_PIN_4
+#define Valve_1_Hot_GPIO_PORT GPIOB
+#define Valve_2_Cold_PIN GPIO_PIN_5
+#define Valve_2_Cold_GPIO_PORT GPIOB
+#define WL_PIN GPIO_PIN_13
+#define WL_GPIO_PORT GPIOB
+#define FS_PIN GPIO_PIN_12
+#define FS_GPIO_PORT GPIOB
+#define RS485_REDE_PIN GPIO_PIN_15
+#define RS485_REDE_GPIO_PORT GPIOA
+#define PUMP_PIN GPIO_PIN_7
+#define PUMP_GPIO_PORT GPIOB
+// пины для подключения контактов STEP, DIR
+#define PIN_STEP_PIN GPIO_PIN_10
+#define PIN_STEP_GPIO_PORT GPIOB
+#define PIN_DIR_PIN GPIO_PIN_11
+#define PIN_DIR_GPIO_PORT GPIOB
+// #define CansiderTemp A2
+// #define FanTemp A3
+// #define Pressure A0
+#define DS_PIN_PIN GPIO_PIN_15 // пин для термометров
+#define DS_PIN_GPIO_PORT GPIOA
 
 #endif
 
@@ -89,19 +127,9 @@
 #define CL_WATER_OFF 0x01 << 5
 #define COOLING_COMM_FAULT 0x01 << 6
 
-#include <Wire.h>
-#include <LiquidCrystal_I2C.h>
 LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
-
-#include <EncButton2.h>
 EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
-
-#include <microDS18B20.h>
-
-#include "GyverStepper.h"
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
-
-#include "GyverPID.h"
 GyverPID regulator(9.0, 1.0, 0.01); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
 
 byte fanThermometer[] = {0x28, 0x99, 0x1D, 0xFB, 0x0C, 0x00, 0x00, 0xF7};
@@ -200,7 +228,55 @@ void USART1_Init()
   // Enable Global Interrupts
   sei();
 }
+#else
+void SysTick_Handler(void)
+{
+  HAL_IncTick();
+}
 
+void NMI_Handler(void)
+{
+}
+
+void HardFault_Handler(void)
+{
+  while (1)
+  {
+  }
+}
+
+void MemManage_Handler(void)
+{
+  while (1)
+  {
+  }
+}
+
+void BusFault_Handler(void)
+{
+  while (1)
+  {
+  }
+}
+
+void UsageFault_Handler(void)
+{
+  while (1)
+  {
+  }
+}
+
+void SVC_Handler(void)
+{
+}
+
+void DebugMon_Handler(void)
+{
+}
+
+void PendSV_Handler(void)
+{
+}
 #endif
 
 void setup()
@@ -210,8 +286,7 @@ void setup()
   wdt_enable(WDTO_2S);
 
   TCCR2B = (TCCR2B & B11111000) | B00000101; // делитель 128 для (245 Гц)
-//  TCCR2B = (TCCR2B & B11111000) | B00000110; //делитель 256 для
-#endif
+                                             //  TCCR2B = (TCCR2B & B11111000) | B00000110; //делитель 256 для
 
   pinMode(LED_BUILTIN, OUTPUT);
   pinMode(Compressor, OUTPUT);  // PWM //Relay
@@ -234,6 +309,48 @@ void setup()
   // digitalWrite(PIN_DIR, LOW);
   pinMode(WL, INPUT_PULLUP); // WL
   pinMode(FS, INPUT_PULLUP); // FS
+
+#else
+  HAL_Init();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
+
+  GPIO_InitTypeDef GPIO_InitStruct;
+
+  GPIO_InitStruct.Pin = Compressor_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(Compressor_GPIO_PORT, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = FAN_PIN;
+  HAL_GPIO_Init(FAN_GPIO_PORT, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = Valve_1_Hot_PIN;
+  HAL_GPIO_Init(Valve_1_Hot_GPIO_PORT, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = Valve_2_Cold_PIN;
+  HAL_GPIO_Init(Valve_2_Cold_GPIO_PORT, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = RS485_REDE_PIN;
+  HAL_GPIO_Init(RS485_REDE_GPIO_PORT, &GPIO_InitStruct);
+  
+  GPIO_InitStruct.Pin = Button_PIN;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(Button_GPIO_PORT, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = WL_PIN;
+  HAL_GPIO_Init(WL_GPIO_PORT, &GPIO_InitStruct);
+  GPIO_InitStruct.Pin = FS_PIN;
+  HAL_GPIO_Init(FS_GPIO_PORT, &GPIO_InitStruct);
+
+  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+
+  // while (1)
+  // {
+  //   HAL_GPIO_TogglePin(LED_GPIO_PORT, LED_PIN);
+
+  //   HAL_Delay(1000);
+  // }
+#endif
 
 #ifdef __AVR_ATmega328PB__
   //  PCICR |= (1 << PCIE0);     // прерывания для FS
