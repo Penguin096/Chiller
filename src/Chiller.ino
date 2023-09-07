@@ -50,8 +50,9 @@
 
 #include <Arduino.h>
 #include "stm32f1xx_hal.h"
+#include "stm32f1xx_hal_adc.h"
 
-#define ADC_REF 1.200
+#define ADC_REF 1.208
 
 #define Button PC13
 #define Compressor PB3
@@ -210,6 +211,8 @@ int16_t simEEPdata[] = {
     1662, // 1800, // 25.0 deg °C
 };
 
+uint16_t adc;
+
 #ifdef __AVR_ATmega328PB__
 
 void USART1_Init()
@@ -279,6 +282,26 @@ void DebugMon_Handler(void)
 void PendSV_Handler(void)
 {
 }
+
+ADC_HandleTypeDef hadc1;
+ADC_ChannelConfTypeDef sConfig = {0};
+
+static void MX_ADC1_Init(void)
+{
+  // Initialising ADC1
+  hadc1.Instance = ADC1;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  // ...
+}
 #endif
 
 void setup()
@@ -345,6 +368,20 @@ void setup()
   HAL_GPIO_Init(FS_GPIO_PORT, &GPIO_InitStruct);
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
+
+  MX_ADC1_Init();
+  sConfig.Channel = ADC_CHANNEL_VREFINT;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  HAL_ADCEx_Calibration_Start(&hadc1); // калибровка АЦП
+  HAL_ADC_Start(&hadc1);
+  HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
+  adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
+  HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
 #endif
 
 #ifdef __AVR_ATmega328PB__
@@ -615,9 +652,22 @@ void Check_Pressure()
       ;                        // пока преобразование не готово - ждем
     PressureTransducer += ADC; // Pressure
   }
-#endif
   PressureTransducer >>= 2;
   //
+#endif
+#ifdef STM32F10X_MD
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  HAL_ADC_Start(&hadc1);
+  HAL_ADC_PollForConversion(&hadc1, 100);                  // ожидаем окончания преобразования
+  PressureTransducer = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
+  HAL_ADC_Stop(&hadc1);                                    // останавливаем АЦП (не обязательно)
+#endif
 
   PressureTransducer = expRunningAverage2(PressureTransducer);
   // PressureTransducer = ((Pressure / (3810.0 - 752.0)) * (PressureTransducer - 752.0) + (-1.0 * 14.504)) * 10.0; // 3808ацп-20мА //752-4мА
@@ -834,8 +884,21 @@ void readTemp()
       ;                   // пока преобразование не готово - ждем
     Cansider_Temp += ADC; // FanTemp
   }
-#endif
   Cansider_Temp = Cansider_Temp >> 2;
+#endif
+#ifdef STM32F10X_MD
+  sConfig.Channel = ADC_CHANNEL_1;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  HAL_ADC_Start(&hadc1);
+  HAL_ADC_PollForConversion(&hadc1, 100);             // ожидаем окончания преобразования
+  Cansider_Temp = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
+  HAL_ADC_Stop(&hadc1);                               // останавливаем АЦП (не обязательно)
+#endif
 
   Cansider_Temp = expRunningAverage(Cansider_Temp);
   Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
@@ -995,15 +1058,27 @@ void loop()
   {
     time_05 = millis();
 
-    Serial.print(regulator.setpoint);
-    Serial.print(',');
-    Serial.print(Test_Temp - Press_Temp);
-    Serial.print(',');
-    Serial.print(Test_Temp);
-    Serial.print(',');
-    Serial.print(Press_Temp);
-    Serial.print(',');
-    Serial.println();
+    // Serial.print(regulator.setpoint);
+    // Serial.print(',');
+    // Serial.print(Test_Temp - Press_Temp);
+    // Serial.print(',');
+    // Serial.print(Test_Temp);
+    // Serial.print(',');
+    // Serial.print(Press_Temp);
+    // Serial.print(',');
+    // Serial.println();
+    sConfig.Channel = ADC_CHANNEL_VREFINT;
+    sConfig.Rank = ADC_REGULAR_RANK_1;
+    sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+    if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    HAL_ADC_Start(&hadc1);
+    HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
+    adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
+    HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
+    Serial.println(3.291 / 4096.0 * adc, 3);
 
     if (Chiler_On)
     {
