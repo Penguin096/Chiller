@@ -370,18 +370,8 @@ void setup()
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 
   MX_ADC1_Init();
-  sConfig.Channel = ADC_CHANNEL_VREFINT;
-  sConfig.Rank = ADC_REGULAR_RANK_1;
-  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
-  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-  {
-    Error_Handler();
-  }
   HAL_ADCEx_Calibration_Start(&hadc1); // калибровка АЦП
-  HAL_ADC_Start(&hadc1);
-  HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
-  adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
-  HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
+
 #endif
 
 #ifdef __AVR_ATmega328PB__
@@ -682,7 +672,7 @@ void Check_Pressure()
   PressureTransducer = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
   HAL_ADC_Stop(&hadc1);                                    // останавливаем АЦП (не обязательно)
 
-  PressureTransducer = ((Pressure / ((62.0 / ((ADC_REF/adc*4095.0) / 4095.0 / 0.020)) - (62.0 / ((ADC_REF/adc*4095.0) / 4095.0 / 0.004)))) * (PressureTransducer - (62.0 / ((ADC_REF/adc*4095.0) / 4095.0 / 0.004))) + (-1.0 * 14.504)) * 10.0; // 3808ацп-20мА //752-4мА
+  PressureTransducer = ((Pressure / ((62.0 / ((ADC_REF / adc * 4095.0) / 4095.0 / 0.020)) - (62.0 / ((ADC_REF / adc * 4095.0) / 4095.0 / 0.004)))) * (PressureTransducer - (62.0 / ((ADC_REF / adc * 4095.0) / 4095.0 / 0.004))) + (-1.0 * 14.504)) * 10.0; // 3808ацп-20мА //752-4мА
 #endif
 
   PressureTransducer = expRunningAverage2(PressureTransducer);
@@ -1107,7 +1097,8 @@ void loop()
     HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
     adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
     HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
-    Serial.println(3.291 / 4095.0 * adc, 3);
+    Serial.println(3.290 / 4095.0 * adc, 3);
+    Serial.println(ADC_REF / adc * 4095.0, 3);
 
     if (Chiler_On)
     {
