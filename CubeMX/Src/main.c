@@ -159,8 +159,8 @@ void SystemClock_Config(void)
     Error_Handler();
   }
   PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC|RCC_PERIPHCLK_USB;
-  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV2;
-  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
+  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
   if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
   {
     Error_Handler();
@@ -387,17 +387,17 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : FLOW_SENS_Pin LEVEL_SENS_Pin FAN1_Pin FAN2_Pin */
-  GPIO_InitStruct.Pin = FLOW_SENS_Pin|LEVEL_SENS_Pin|FAN1_Pin|FAN2_Pin;
+  /*Configure GPIO pins : FLOW_SENS_Pin LEVEL_SENS_Pin FAN_1_Pin FAN_2_Pin */
+  GPIO_InitStruct.Pin = FLOW_SENS_Pin|LEVEL_SENS_Pin|FAN_1_Pin|FAN_2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : FAN3_Pin */
-  GPIO_InitStruct.Pin = FAN3_Pin;
+  /*Configure GPIO pin : FAN_3_Pin */
+  GPIO_InitStruct.Pin = FAN_3_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(FAN3_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(FAN_3_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pin : RS_DIR_Pin */
   GPIO_InitStruct.Pin = RS_DIR_Pin;

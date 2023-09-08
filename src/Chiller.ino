@@ -64,42 +64,54 @@
 #define FS PB12
 #define RS485_REDE PA15
 #define PUMP PB7
-// пины для подключения контактов STEP, DIR
 #define PIN_STEP PB10
 #define PIN_DIR PB11
-// #define CansiderTemp A2
-// #define FanTemp A3
-// #define Pressure A0
 #define DS_PIN PA2 // пин для термометров
 
-#define Button_PIN GPIO_PIN_13
-#define Button_GPIO_PORT GPIOC
-#define Compressor_PIN GPIO_PIN_3
-#define Compressor_GPIO_PORT GPIOB
-#define FAN_PIN GPIO_PIN_6
-#define FAN_GPIO_PORT GPIOB
-#define Valve_1_Hot_PIN GPIO_PIN_4
-#define Valve_1_Hot_GPIO_PORT GPIOB
-#define Valve_2_Cold_PIN GPIO_PIN_5
-#define Valve_2_Cold_GPIO_PORT GPIOB
-#define WL_PIN GPIO_PIN_13
-#define WL_GPIO_PORT GPIOB
-#define FS_PIN GPIO_PIN_12
-#define FS_GPIO_PORT GPIOB
-#define RS485_REDE_PIN GPIO_PIN_15
-#define RS485_REDE_GPIO_PORT GPIOA
-#define PUMP_PIN GPIO_PIN_7
-#define PUMP_GPIO_PORT GPIOB
+#define RELAY_Pin GPIO_PIN_3
+#define RELAY_GPIO_Port GPIOB
+#define FAN_Pin GPIO_PIN_6
+#define FAN_GPIO_Port GPIOB
+#define VALVE_1_Pin GPIO_PIN_4
+#define VALVE_1_GPIO_Port GPIOB
+#define VALVE_2_Pin GPIO_PIN_5
+#define VALVE_2_GPIO_Port GPIOB
+#define RS_DIR_Pin GPIO_PIN_15
+#define RS_DIR_GPIO_Port GPIOA
+#define PUMP_Pin GPIO_PIN_7
+#define PUMP_GPIO_Port GPIOB
 // пины для подключения контактов STEP, DIR
-#define PIN_STEP_PIN GPIO_PIN_10
-#define PIN_STEP_GPIO_PORT GPIOB
-#define PIN_DIR_PIN GPIO_PIN_11
-#define PIN_DIR_GPIO_PORT GPIOB
-// #define CansiderTemp A2
-// #define FanTemp A3
-// #define Pressure A0
+#define STEP_Pin GPIO_PIN_10
+#define STEP_GPIO_Port GPIOB
+#define DIR_Pin GPIO_PIN_11
+#define DIR_GPIO_Port GPIOB
+#define EN_4988_Pin GPIO_PIN_1
+#define EN_4988_GPIO_Port GPIOB
+
+#define BUTTON_Pin GPIO_PIN_13
+#define BUTTON_GPIO_Port GPIOC
+#define LEVEL_SENS_Pin GPIO_PIN_13
+#define LEVEL_SENS_GPIO_Port GPIOB
+#define FLOW_SENS_Pin GPIO_PIN_12
+#define FLOW_SENS_GPIO_Port GPIOB
+#define FAN_1_Pin GPIO_PIN_14
+#define FAN_1_GPIO_Port GPIOB
+#define FAN_2_Pin GPIO_PIN_15
+#define FAN_2_GPIO_Port GPIOB
+#define FAN_3_Pin GPIO_PIN_8
+#define FAN_3_GPIO_Port GPIOA
+
+#define P_SENSE_Pin GPIO_PIN_0
+#define P_SENSE_GPIO_Port GPIOA
+#define T_SENSE_Pin GPIO_PIN_1
+#define T_SENSE_GPIO_Port GPIOA
+#define C_SENSE_Pin GPIO_PIN_2
+#define C_SENSE_GPIO_Port GPIOA
+#define R_SENSE_Pin GPIO_PIN_3
+#define R_SENSE_GPIO_Port GPIOA
+
 #define DS_PIN_PIN GPIO_PIN_15 // пин для термометров
-#define DS_PIN_GPIO_PORT GPIOA
+#define DS_PIN_GPIO_Port GPIOA
 
 #endif
 
@@ -130,7 +142,7 @@
 #define CL_WATER_OFF 0x01 << 5
 #define COOLING_COMM_FAULT 0x01 << 6
 
-//LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
+// LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
 EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
 GyverPID regulator(9.0, 1.0, 0.01); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
@@ -284,6 +296,17 @@ void PendSV_Handler(void)
 {
 }
 
+/* Private variables ---------------------------------------------------------*/
+ADC_HandleTypeDef hadc1;
+
+I2C_HandleTypeDef hi2c1;
+
+IWDG_HandleTypeDef hiwdg;
+
+UART_HandleTypeDef huart1;
+
+PCD_HandleTypeDef hpcd_USB_FS;
+
 /**
  * @brief System Clock Configuration
  * @retval None
@@ -292,6 +315,7 @@ void SystemClock_Config(void)
 {
   RCC_OscInitTypeDef RCC_OscInitStruct = {0};
   RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_PeriphCLKInitTypeDef PeriphClkInit = {0};
 
   /** Initializes the RCC Oscillators according to the specified parameters
    * in the RCC_OscInitTypeDef structure.
@@ -321,10 +345,93 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+  PeriphClkInit.PeriphClockSelection = RCC_PERIPHCLK_ADC | RCC_PERIPHCLK_USB;
+  PeriphClkInit.AdcClockSelection = RCC_ADCPCLK2_DIV6;
+  PeriphClkInit.UsbClockSelection = RCC_USBCLKSOURCE_PLL_DIV1_5;
+  if (HAL_RCCEx_PeriphCLKConfig(&PeriphClkInit) != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
 
-/* Private variables ---------------------------------------------------------*/
-IWDG_HandleTypeDef hiwdg;
+/**
+ * @brief ADC1 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_ADC1_Init(void)
+{
+
+  /* USER CODE BEGIN ADC1_Init 0 */
+
+  /* USER CODE END ADC1_Init 0 */
+
+  ADC_ChannelConfTypeDef sConfig = {0};
+
+  /* USER CODE BEGIN ADC1_Init 1 */
+
+  /* USER CODE END ADC1_Init 1 */
+
+  /** Common config
+   */
+  hadc1.Instance = ADC1;
+  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
+  hadc1.Init.ContinuousConvMode = DISABLE;
+  hadc1.Init.DiscontinuousConvMode = DISABLE;
+  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
+  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
+  hadc1.Init.NbrOfConversion = 1;
+  if (HAL_ADC_Init(&hadc1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Configure Regular Channel
+   */
+  sConfig.Channel = ADC_CHANNEL_0;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_1CYCLE_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN ADC1_Init 2 */
+
+  /* USER CODE END ADC1_Init 2 */
+}
+
+/**
+ * @brief I2C1 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_I2C1_Init(void)
+{
+
+  /* USER CODE BEGIN I2C1_Init 0 */
+
+  /* USER CODE END I2C1_Init 0 */
+
+  /* USER CODE BEGIN I2C1_Init 1 */
+
+  /* USER CODE END I2C1_Init 1 */
+  hi2c1.Instance = I2C1;
+  hi2c1.Init.ClockSpeed = 100000;
+  hi2c1.Init.DutyCycle = I2C_DUTYCYCLE_2;
+  hi2c1.Init.OwnAddress1 = 0;
+  hi2c1.Init.AddressingMode = I2C_ADDRESSINGMODE_7BIT;
+  hi2c1.Init.DualAddressMode = I2C_DUALADDRESS_DISABLE;
+  hi2c1.Init.OwnAddress2 = 0;
+  hi2c1.Init.GeneralCallMode = I2C_GENERALCALL_DISABLE;
+  hi2c1.Init.NoStretchMode = I2C_NOSTRETCH_DISABLE;
+  if (HAL_I2C_Init(&hi2c1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN I2C1_Init 2 */
+
+  /* USER CODE END I2C1_Init 2 */
+}
 
 /**
  * @brief IWDG Initialization Function
@@ -354,45 +461,133 @@ static void MX_IWDG_Init(void)
 }
 
 /**
+ * @brief USART1 Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 250000;
+  huart1.Init.WordLength = UART_WORDLENGTH_8B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+}
+
+/**
+ * @brief USB Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_USB_PCD_Init(void)
+{
+
+  /* USER CODE BEGIN USB_Init 0 */
+
+  /* USER CODE END USB_Init 0 */
+
+  /* USER CODE BEGIN USB_Init 1 */
+
+  /* USER CODE END USB_Init 1 */
+  hpcd_USB_FS.Instance = USB;
+  hpcd_USB_FS.Init.dev_endpoints = 8;
+  hpcd_USB_FS.Init.speed = PCD_SPEED_FULL;
+  hpcd_USB_FS.Init.low_power_enable = DISABLE;
+  hpcd_USB_FS.Init.lpm_enable = DISABLE;
+  hpcd_USB_FS.Init.battery_charging_enable = DISABLE;
+  if (HAL_PCD_Init(&hpcd_USB_FS) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USB_Init 2 */
+
+  /* USER CODE END USB_Init 2 */
+}
+
+/**
  * @brief GPIO Initialization Function
  * @param None
  * @retval None
  */
 static void MX_GPIO_Init(void)
 {
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
   /* USER CODE BEGIN MX_GPIO_Init_1 */
   /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
+  __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOB_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, EN_4988_Pin | RELAY_Pin | VALVE_1_Pin | VALVE_2_Pin | FAN_Pin | PUMP_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOB, STEP_Pin | DIR_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_SET);
+
+  /*Configure GPIO pin : BUTTON_Pin */
+  GPIO_InitStruct.Pin = BUTTON_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(BUTTON_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : P_SENSE_Pin */
+  GPIO_InitStruct.Pin = P_SENSE_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+  HAL_GPIO_Init(P_SENSE_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : EN_4988_Pin STEP_Pin DIR_Pin RELAY_Pin
+                           VALVE_1_Pin VALVE_2_Pin FAN_Pin PUMP_Pin */
+  GPIO_InitStruct.Pin = EN_4988_Pin | STEP_Pin | DIR_Pin | RELAY_Pin | VALVE_1_Pin | VALVE_2_Pin | FAN_Pin | PUMP_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : FLOW_SENS_Pin LEVEL_SENS_Pin FAN_1_Pin FAN_2_Pin */
+  GPIO_InitStruct.Pin = FLOW_SENS_Pin | LEVEL_SENS_Pin | FAN_1_Pin | FAN_2_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : FAN_3_Pin */
+  GPIO_InitStruct.Pin = FAN_3_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(FAN_3_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : RS_DIR_Pin */
+  GPIO_InitStruct.Pin = RS_DIR_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  HAL_GPIO_Init(RS_DIR_GPIO_Port, &GPIO_InitStruct);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
   /* USER CODE END MX_GPIO_Init_2 */
-}
-
-ADC_HandleTypeDef hadc1;
-ADC_ChannelConfTypeDef sConfig;
-
-/**
- * @brief  ADC configuration
- * @param  None
- * @retval None
- */
-static void ADC1_Init(void)
-{
-  // Initialising ADC1
-  hadc1.Instance = ADC1;
-  hadc1.Init.ScanConvMode = ADC_SCAN_DISABLE;
-  hadc1.Init.ContinuousConvMode = DISABLE;
-  hadc1.Init.DiscontinuousConvMode = DISABLE;
-  hadc1.Init.ExternalTrigConv = ADC_SOFTWARE_START;
-  hadc1.Init.DataAlign = ADC_DATAALIGN_RIGHT;
-  hadc1.Init.NbrOfConversion = 1;
-  if (HAL_ADC_Init(&hadc1) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  // ...
 }
 #endif
 
@@ -451,41 +646,11 @@ void setup()
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_IWDG_Init();
+  MX_ADC1_Init();
+  MX_I2C1_Init();
+  MX_USART1_UART_Init();
+  MX_USB_PCD_Init();
 
-  __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOB_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
-
-  GPIO_InitTypeDef GPIO_InitStruct;
-
-  GPIO_InitStruct.Pin = Compressor_PIN;
-  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(Compressor_GPIO_PORT, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = FAN_PIN;
-  HAL_GPIO_Init(FAN_GPIO_PORT, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = Valve_1_Hot_PIN;
-  HAL_GPIO_Init(Valve_1_Hot_GPIO_PORT, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = Valve_2_Cold_PIN;
-  HAL_GPIO_Init(Valve_2_Cold_GPIO_PORT, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = RS485_REDE_PIN;
-  HAL_GPIO_Init(RS485_REDE_GPIO_PORT, &GPIO_InitStruct);
-
-  GPIO_InitStruct.Pin = Button_PIN;
-  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  HAL_GPIO_Init(Button_GPIO_PORT, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = WL_PIN;
-  HAL_GPIO_Init(WL_GPIO_PORT, &GPIO_InitStruct);
-  GPIO_InitStruct.Pin = FS_PIN;
-  HAL_GPIO_Init(FS_GPIO_PORT, &GPIO_InitStruct);
-
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
-
-  /* Configure the ADC peripheral */
-  ADC1_Init();
   /* Run the ADC calibration */
   if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
   {
@@ -783,6 +948,8 @@ void Check_Pressure()
   PressureTransducer = ((Pressure / ((50.8 / (ADC_REF / 4096.0 / 0.020)) - (50.8 / (ADC_REF / 4096.0 / 0.004)))) * (PressureTransducer - (50.8 / (ADC_REF / 4096.0 / 0.004))) + (-1.0 * 14.504)) * 10.0; // 3808ацп-20мА //752-4мА
 #endif
 #ifdef STM32F10X_MD
+  ADC_ChannelConfTypeDef sConfig;
+
   sConfig.Channel = ADC_CHANNEL_VREFINT;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
@@ -1028,6 +1195,8 @@ void readTemp()
   Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
 #endif
 #ifdef STM32F10X_MD
+  ADC_ChannelConfTypeDef sConfig;
+
   sConfig.Channel = ADC_CHANNEL_VREFINT;
   sConfig.Rank = ADC_REGULAR_RANK_1;
   sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
@@ -1240,6 +1409,8 @@ void loop()
     // Serial.print(Press_Temp);
     // Serial.print(',');
     // Serial.println();
+    ADC_ChannelConfTypeDef sConfig;
+
     sConfig.Channel = ADC_CHANNEL_VREFINT;
     sConfig.Rank = ADC_REGULAR_RANK_1;
     sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
