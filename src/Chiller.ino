@@ -49,8 +49,9 @@
 #ifdef STM32F10X_MD
 
 #include <Arduino.h>
-#include "stm32f1xx_hal.h"
-#include "stm32f1xx_hal_adc.h"
+// #include "stm32f1xx_hal.h"
+// #include "stm32f1xx_hal_adc.h"
+// #include "stm32f1xx_hal_iwdg.h"
 
 #define ADC_REF 1.208
 
@@ -283,10 +284,101 @@ void PendSV_Handler(void)
 {
 }
 
-ADC_HandleTypeDef hadc1;
-ADC_ChannelConfTypeDef sConfig = {0};
+/**
+ * @brief System Clock Configuration
+ * @retval None
+ */
+void SystemClock_Config(void)
+{
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-static void MX_ADC1_Init(void)
+  /** Initializes the RCC Oscillators according to the specified parameters
+   * in the RCC_OscInitTypeDef structure.
+   */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_LSI | RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.HSEPredivValue = RCC_HSE_PREDIV_DIV1;
+  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
+  RCC_OscInitStruct.LSIState = RCC_LSI_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLMUL = RCC_PLL_MUL9;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Initializes the CPU, AHB and APB buses clocks
+   */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK | RCC_CLOCKTYPE_SYSCLK | RCC_CLOCKTYPE_PCLK1 | RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  {
+    Error_Handler();
+  }
+}
+
+/* Private variables ---------------------------------------------------------*/
+IWDG_HandleTypeDef hiwdg;
+
+/**
+ * @brief IWDG Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_IWDG_Init(void)
+{
+
+  /* USER CODE BEGIN IWDG_Init 0 */
+
+  /* USER CODE END IWDG_Init 0 */
+
+  /* USER CODE BEGIN IWDG_Init 1 */
+
+  /* USER CODE END IWDG_Init 1 */
+  hiwdg.Instance = IWDG;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_32;
+  hiwdg.Init.Reload = 2500;
+  if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN IWDG_Init 2 */
+
+  /* USER CODE END IWDG_Init 2 */
+}
+
+/**
+ * @brief GPIO Initialization Function
+ * @param None
+ * @retval None
+ */
+static void MX_GPIO_Init(void)
+{
+  /* USER CODE BEGIN MX_GPIO_Init_1 */
+  /* USER CODE END MX_GPIO_Init_1 */
+
+  /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOD_CLK_ENABLE();
+
+  /* USER CODE BEGIN MX_GPIO_Init_2 */
+  /* USER CODE END MX_GPIO_Init_2 */
+}
+
+ADC_HandleTypeDef hadc1;
+ADC_ChannelConfTypeDef sConfig;
+
+/**
+ * @brief  ADC configuration
+ * @param  None
+ * @retval None
+ */
+static void ADC1_Init(void)
 {
   // Initialising ADC1
   hadc1.Instance = ADC1;
@@ -336,7 +428,30 @@ void setup()
   pinMode(FS, INPUT_PULLUP); // FS
 #endif
 #ifdef STM32F10X_MD
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
   HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_IWDG_Init();
+
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
@@ -369,8 +484,14 @@ void setup()
 
   HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_SET);
 
-  MX_ADC1_Init();
-  HAL_ADCEx_Calibration_Start(&hadc1); // калибровка АЦП
+  /* Configure the ADC peripheral */
+  ADC1_Init();
+  /* Run the ADC calibration */
+  if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
+  {
+    /* Calibration Error */
+    Error_Handler();
+  }
 
 #endif
 
@@ -385,14 +506,17 @@ void setup()
 
   USART1_Init();
 #endif
+
   Serial.begin(9600);
 
+#ifdef __AVR_ATmega328PB__
   lcd.init(); // initialize the lcd
 
   // Print a message to the LCD.
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print("OrchiChiller v3");
+#endif
 
 #ifdef __AVR_ATmega328PB__
   // Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
@@ -402,6 +526,9 @@ void setup()
     Cansider_Sp = 100;
 #ifdef __AVR_ATmega328PB__
   wdt_reset();
+#endif
+#ifdef STM32F10X_MD
+  HAL_IWDG_Refresh(&hiwdg);
 #endif
 
   int N = simEEPdata[2];
@@ -418,6 +545,9 @@ void setup()
 #ifdef __AVR_ATmega328PB__
     wdt_reset();
 #endif
+#ifdef STM32F10X_MD
+    HAL_IWDG_Refresh(&hiwdg);
+#endif
   }
   stepper.setCurrent(0);
   stepper.setTarget(50); // в шагах
@@ -429,7 +559,12 @@ void setup()
 #ifdef __AVR_ATmega328PB__
   wdt_reset();
 #endif
+#ifdef STM32F10X_MD
+  HAL_IWDG_Refresh(&hiwdg);
+#endif
+#ifdef __AVR_ATmega328PB__
   lcd.clear();
+#endif
 }
 
 #ifdef __AVR_ATmega328PB__
@@ -940,8 +1075,19 @@ void readTemp()
 
 void loop()
 {
+#ifdef STM32F10X_MD
+  if (Serial)
+  { // USB  подключен
+  }
+  else
+  {
+  }
+#endif
 #ifdef __AVR_ATmega328PB__
   wdt_reset();
+#endif
+#ifdef STM32F10X_MD
+  HAL_IWDG_Refresh(&hiwdg);
 #endif
   stepper.tick();
   parsing();
@@ -985,9 +1131,11 @@ void loop()
       reserved[0] &= ~(CL_WATER_LEVEL_ERR);
     }
 
+#ifdef __AVR_ATmega328PB__
     Wire.beginTransmission(0x27);
     if (Wire.endTransmission())
       lcd.init();
+#endif
 
 #ifdef FanProtec
     if (Fan1_Off >= 20 || Fan2_Off >= 20 || Fan3_Off >= 20)
@@ -1011,10 +1159,12 @@ void loop()
 
     if ((reserved[0] || LowPressure || CriticalPressure || Freez_Temp || Fan) && Chiller_Switch)
     {
+#ifdef __AVR_ATmega328PB__
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("Error:");
       lcd.setCursor(0, 1);
+#endif
       String Error;
       if (Freez_Temp)
         Error = "Fan";
@@ -1040,10 +1190,13 @@ void loop()
         Error = "OFF";
       else
         Error = "None";
+#ifdef __AVR_ATmega328PB__
       lcd.print(Error);
+#endif
     }
     else
     {
+#ifdef __AVR_ATmega328PB__
       lcd.clear();
       lcd.setCursor(0, 0);
       // lcd.print("                ");
@@ -1070,6 +1223,7 @@ void loop()
       lcd.setCursor(11, 1);
       lcd.print(100.0 / 450.0 * stepper.getCurrent(), 0);
       lcd.print("%");
+#endif
     }
   }
 
@@ -1202,7 +1356,9 @@ void loop()
   if (enc.click())
   {
     Chiller_Switch = false;
+#ifdef __AVR_ATmega328PB__
     lcd.clear();
+#endif
   }
 
   if (enc.step(1))
@@ -1210,11 +1366,13 @@ void loop()
     Cansider_Sp += step_a;
     if (Cansider_Sp < 50 || Cansider_Sp > 350)
       Cansider_Sp -= step_a;
+#ifdef __AVR_ATmega328PB__
     lcd.setCursor(0, 0);
     lcd.print("                ");
     lcd.setCursor(0, 0);
     lcd.print("Set:");
     lcd.print(Cansider_Sp / 10.0, 1);
+#endif
   }
   // разворачиваем шаг для изменения в обратную сторону
   // передаём количество предварительных кликов
