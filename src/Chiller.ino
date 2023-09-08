@@ -130,7 +130,7 @@
 #define CL_WATER_OFF 0x01 << 5
 #define COOLING_COMM_FAULT 0x01 << 6
 
-LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
+//LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
 EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
 GyverPID regulator(9.0, 1.0, 0.01); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
