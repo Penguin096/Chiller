@@ -50,8 +50,8 @@
 
 #include <Arduino.h>
 
-#include "../CubeMX/Inc/main.h"
-#include "../CubeMX/Inc/usb_device.h"
+#include "main.h"
+#include "usb_device.h"
 // #include "stm32f1xx_hal.h"
 // #include "stm32f1xx_hal_adc.h"
 // #include "stm32f1xx_hal_iwdg.h"
@@ -145,7 +145,7 @@
 #define CL_WATER_OFF 0x01 << 5
 #define COOLING_COMM_FAULT 0x01 << 6
 
-// LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
+LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
 EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
 GyverPID regulator(9.0, 1.0, 0.01); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
@@ -495,38 +495,38 @@ static void MX_USART1_UART_Init(void)
   /* USER CODE END USART1_Init 2 */
 }
 
-// /**
-//   * Init USB device Library, add supported class and start the library
-//   * @retval None
-//   */
-// void MX_USB_DEVICE_Init(void)
-// {
-//   /* USER CODE BEGIN USB_DEVICE_Init_PreTreatment */
+/**
+ * Init USB device Library, add supported class and start the library
+ * @retval None
+ */
+void MX_USB_DEVICE_Init(void)
+{
+  /* USER CODE BEGIN USB_DEVICE_Init_PreTreatment */
 
-//   /* USER CODE END USB_DEVICE_Init_PreTreatment */
+  /* USER CODE END USB_DEVICE_Init_PreTreatment */
 
-//   /* Init Device Library, add supported class and start the library. */
-//   if (USBD_Init(&hUsbDeviceFS, &FS_Desc, DEVICE_FS) != USBD_OK)
-//   {
-//     Error_Handler();
-//   }
-//   if (USBD_RegisterClass(&hUsbDeviceFS, &USBD_CDC) != USBD_OK)
-//   {
-//     Error_Handler();
-//   }
-//   if (USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS) != USBD_OK)
-//   {
-//     Error_Handler();
-//   }
-//   if (USBD_Start(&hUsbDeviceFS) != USBD_OK)
-//   {
-//     Error_Handler();
-//   }
+  /* Init Device Library, add supported class and start the library. */
+  if (USBD_Init(&hUsbDeviceFS, &FS_Desc, DEVICE_FS) != USBD_OK)
+  {
+    Error_Handler();
+  }
+  if (USBD_RegisterClass(&hUsbDeviceFS, &USBD_CDC) != USBD_OK)
+  {
+    Error_Handler();
+  }
+  if (USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS) != USBD_OK)
+  {
+    Error_Handler();
+  }
+  if (USBD_Start(&hUsbDeviceFS) != USBD_OK)
+  {
+    Error_Handler();
+  }
 
-//   /* USER CODE BEGIN USB_DEVICE_Init_PostTreatment */
+  /* USER CODE BEGIN USB_DEVICE_Init_PostTreatment */
 
-//   /* USER CODE END USB_DEVICE_Init_PostTreatment */
-// }
+  /* USER CODE END USB_DEVICE_Init_PostTreatment */
+}
 
 /**
  * @brief GPIO Initialization Function
@@ -678,7 +678,7 @@ void setup()
   USART1_Init();
 #endif
 
-  Serial.begin(9600);
+  // Serial.begin(9600);
 
 #ifdef __AVR_ATmega328PB__
   lcd.init(); // initialize the lcd
@@ -857,26 +857,26 @@ ISR(PCINT0_vect)
 // управление через плоттер
 void parsing()
 {
-  if (Serial.available() > 1)
-  {
-    char incoming = Serial.read();
-    float value = Serial.parseFloat();
-    switch (incoming)
-    {
-    case 'p':
-      regulator.Kp = value;
-      break;
-    case 'i':
-      regulator.Ki = value;
-      break;
-    case 'd':
-      regulator.Kd = value;
-      break;
-    case 's':
-      regulator.setpoint = value;
-      break;
-    }
-  }
+  // if (Serial.available() > 1)
+  // {
+  //   char incoming = Serial.read();
+  //   float value = Serial.parseFloat();
+  //   switch (incoming)
+  //   {
+  //   case 'p':
+  //     regulator.Kp = value;
+  //     break;
+  //   case 'i':
+  //     regulator.Ki = value;
+  //     break;
+  //   case 'd':
+  //     regulator.Kd = value;
+  //     break;
+  //   case 's':
+  //     regulator.setpoint = value;
+  //     break;
+  //   }
+  // }
 }
 
 int16_t Lookup()
@@ -1406,15 +1406,16 @@ void loop()
   {
     time_05 = millis();
 
-    // Serial.print(regulator.setpoint);
-    // Serial.print(',');
-    // Serial.print(Test_Temp - Press_Temp);
-    // Serial.print(',');
-    // Serial.print(Test_Temp);
-    // Serial.print(',');
-    // Serial.print(Press_Temp);
-    // Serial.print(',');
-    // Serial.println();
+// Serial.print(regulator.setpoint);
+// Serial.print(',');
+// Serial.print(Test_Temp - Press_Temp);
+// Serial.print(',');
+// Serial.print(Test_Temp);
+// Serial.print(',');
+// Serial.print(Press_Temp);
+// Serial.print(',');
+// Serial.println();
+#ifdef STM32F10X_MD
     ADC_ChannelConfTypeDef sConfig;
 
     sConfig.Channel = ADC_CHANNEL_VREFINT;
@@ -1428,8 +1429,9 @@ void loop()
     HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
     adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
     HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
-    Serial.println(3.290 / 4095.0 * adc, 3);
-    Serial.println(ADC_REF / adc * 4095.0, 3);
+// Serial.println(3.290 / 4095.0 * adc, 3);
+// Serial.println(ADC_REF / adc * 4095.0, 3);
+#endif
 
     if (Chiler_On)
     {
