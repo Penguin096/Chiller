@@ -50,8 +50,8 @@
 
 #include <Arduino.h>
 
-#include "main.h"
-#include "usb_device.h"
+#include "../CubeMX/Inc/main.h"
+//#include "usb_device.h"
 // #include "stm32f1xx_hal.h"
 // #include "stm32f1xx_hal_adc.h"
 // #include "stm32f1xx_hal_iwdg.h"
@@ -495,38 +495,38 @@ static void MX_USART1_UART_Init(void)
   /* USER CODE END USART1_Init 2 */
 }
 
-/**
- * Init USB device Library, add supported class and start the library
- * @retval None
- */
-void MX_USB_DEVICE_Init(void)
-{
-  /* USER CODE BEGIN USB_DEVICE_Init_PreTreatment */
+// /**
+//  * Init USB device Library, add supported class and start the library
+//  * @retval None
+//  */
+// void MX_USB_DEVICE_Init(void)
+// {
+//   /* USER CODE BEGIN USB_DEVICE_Init_PreTreatment */
 
-  /* USER CODE END USB_DEVICE_Init_PreTreatment */
+//   /* USER CODE END USB_DEVICE_Init_PreTreatment */
 
-  /* Init Device Library, add supported class and start the library. */
-  if (USBD_Init(&hUsbDeviceFS, &FS_Desc, DEVICE_FS) != USBD_OK)
-  {
-    Error_Handler();
-  }
-  if (USBD_RegisterClass(&hUsbDeviceFS, &USBD_CDC) != USBD_OK)
-  {
-    Error_Handler();
-  }
-  if (USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS) != USBD_OK)
-  {
-    Error_Handler();
-  }
-  if (USBD_Start(&hUsbDeviceFS) != USBD_OK)
-  {
-    Error_Handler();
-  }
+//   /* Init Device Library, add supported class and start the library. */
+//   if (USBD_Init(&hUsbDeviceFS, &FS_Desc, DEVICE_FS) != USBD_OK)
+//   {
+//     Error_Handler();
+//   }
+//   if (USBD_RegisterClass(&hUsbDeviceFS, &USBD_CDC) != USBD_OK)
+//   {
+//     Error_Handler();
+//   }
+//   if (USBD_CDC_RegisterInterface(&hUsbDeviceFS, &USBD_Interface_fops_FS) != USBD_OK)
+//   {
+//     Error_Handler();
+//   }
+//   if (USBD_Start(&hUsbDeviceFS) != USBD_OK)
+//   {
+//     Error_Handler();
+//   }
 
-  /* USER CODE BEGIN USB_DEVICE_Init_PostTreatment */
+//   /* USER CODE BEGIN USB_DEVICE_Init_PostTreatment */
 
-  /* USER CODE END USB_DEVICE_Init_PostTreatment */
-}
+//   /* USER CODE END USB_DEVICE_Init_PostTreatment */
+// }
 
 /**
  * @brief GPIO Initialization Function
