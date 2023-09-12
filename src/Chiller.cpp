@@ -1,5 +1,4 @@
 #include <Wire.h>
-#include "LiquidCrystal_I2C.h"
 #include "EncButton2.h"
 #include "microDS18B20.h"
 #include "GyverStepper.h"
@@ -10,6 +9,7 @@
 #include <Arduino.h>
 #include <avr/wdt.h>
 #include <EEPROM.h>
+#include "LiquidCrystal_I2C.h"
 
 #define ADC_REF 1.096
 #define Button 2
@@ -56,6 +56,8 @@
 //  #include "stm32f1xx_hal_adc.h"
 //  #include "stm32f1xx_hal_iwdg.h"
 
+#include "HD44780_LiquidCrystal_I2C.h"
+
 #define ADC_REF 1.208
 #define RXBUFFERSIZE 15
 
@@ -101,7 +103,9 @@
 #define CL_WATER_OFF 0x01 << 5
 #define COOLING_COMM_FAULT 0x01 << 6
 
+#ifdef __AVR_ATmega328PB__
 LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
+#endif
 EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
 GyverPID regulator(9.0, 1.0, 0.01); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
@@ -699,7 +703,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
   if (GPIO_Pin == FLOW_SENS_Pin) // если прерывание поступило от ножки FS
   {
-    Serial.println("Clicllll");
     ticks++;
 
     if ((varTime + 1000) < millis() || varTime > millis())
@@ -803,6 +806,14 @@ void setup()
   lcd.setCursor(0, 0);
   lcd.print("OrchiChiller v3");
 #endif
+#ifdef STM32F10X_MD
+  /* Initialize */
+  HD44780_Init(2);
+
+  HD44780_Backlight();
+  HD44780_SetCursor(0, 0);
+  HD44780_PrintStr("OrchiChiller v3");
+#endif
 
 #ifdef __AVR_ATmega328PB__
   // Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
@@ -850,6 +861,9 @@ void setup()
 #endif
 #ifdef __AVR_ATmega328PB__
   lcd.clear();
+#endif
+#ifdef STM32F10X_MD
+  HD44780_Clear();
 #endif
 
   // #ifdef __AVR_ATmega328PB__ // Тест выравнивание темп
@@ -1488,15 +1502,15 @@ void loop()
     if (digitalRead(WL))
 #endif
 #ifdef STM32F10X_MD
-    if (HAL_GPIO_ReadPin(LEVEL_SENS_GPIO_Port, LEVEL_SENS_Pin))
+      if (HAL_GPIO_ReadPin(LEVEL_SENS_GPIO_Port, LEVEL_SENS_Pin))
 #endif
-    {
-      reserved[0] |= CL_WATER_LEVEL_ERR;
-    }
-    else
-    {
-      reserved[0] &= ~(CL_WATER_LEVEL_ERR);
-    }
+      {
+        reserved[0] |= CL_WATER_LEVEL_ERR;
+      }
+      else
+      {
+        reserved[0] &= ~(CL_WATER_LEVEL_ERR);
+      }
 
 #ifdef __AVR_ATmega328PB__
     Wire.beginTransmission(0x27);
@@ -1532,6 +1546,12 @@ void loop()
       lcd.print("Error:");
       lcd.setCursor(0, 1);
 #endif
+#ifdef STM32F10X_MD
+      HD44780_Clear();
+      HD44780_SetCursor(0, 0);
+      HD44780_PrintStr("Error:");
+      HD44780_SetCursor(0, 1);
+#endif
       String Error;
       if (Freez_Temp)
         Error = "Fan";
@@ -1559,6 +1579,9 @@ void loop()
         Error = "None";
 #ifdef __AVR_ATmega328PB__
       lcd.print(Error);
+#endif
+#ifdef STM32F10X_MD
+      HD44780_PrintStr(Error.c_str());
 #endif
     }
     else
@@ -1591,6 +1614,35 @@ void loop()
       lcd.setCursor(11, 1);
       lcd.print(100.0 / 450.0 * stepper.getCurrent(), 0);
       lcd.print("%");
+#endif
+#ifdef STM32F10X_MD
+      HD44780_Clear();
+      HD44780_SetCursor(0, 0);
+      // HD44780_PrintStr("                ");
+      HD44780_SetCursor(0, 0);
+      HD44780_PrintStr("Set:");
+      //////////HD44780_PrintStr(Cansider_Sp / 10.0, 1);
+      HD44780_SetCursor(10, 0);
+      /////////HD44780_PrintStr(PressureTransducer / 10);
+      HD44780_PrintStr("psi");
+      HD44780_SetCursor(0, 1);
+      // HD44780_PrintStr("                ");
+      HD44780_SetCursor(0, 1);
+      // HD44780_PrintStr("T1:");
+      /////////HD44780_PrintStr(Cansider_Temp2 / 10.0, 1);
+      // HD44780_PrintStr("F:");
+      // HD44780_PrintStr(reserved[1]);
+      // HD44780_PrintStr((Test_Temp - Press_Temp) / 10.0, 1);
+      // HD44780_PrintStr(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
+      // HD44780_PrintStr(" T2:");
+      // HD44780_PrintStr(Fan_Ctrl_Temp / 10.0, 1);
+      // HD44780_SetCursor(5, 1);
+      // HD44780_PrintStr(Power_Laser, 0);
+      // HD44780_PrintStr(" W");
+      // HD44780_PrintStr(Test_Temp / 10.0, 1);
+      HD44780_SetCursor(11, 1);
+      //////////HD44780_PrintStr(100.0 / 450.0 * stepper.getCurrent(), 0);
+      HD44780_PrintStr("%");
 #endif
     }
   }
@@ -1694,15 +1746,15 @@ void loop()
     if (digitalRead(Valve_1_Hot))
 #endif
 #ifdef STM32F10X_MD
-    if (!HAL_GPIO_ReadPin(VALVE_1_GPIO_Port, VALVE_1_Pin))
+      if (!HAL_GPIO_ReadPin(VALVE_1_GPIO_Port, VALVE_1_Pin))
 #endif
-    {
-      stepper.setTarget(200); // в шагах
-    }
-    else
-    {
-      stepper.setTarget(pos);
-    }
+      {
+        stepper.setTarget(200); // в шагах
+      }
+      else
+      {
+        stepper.setTarget(pos);
+      }
 
     if (Chiler_On)
     {
