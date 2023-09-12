@@ -807,36 +807,36 @@ void setup()
   lcd.clear();
 #endif
 
-#ifdef __AVR_ATmega328PB__ // Тест выравнивание темп
-  for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
-  {
-    ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX0)); // ADC_A2
-    ADMUX |= (1 << MUX1);
-    ADCSRA |= (1 << ADSC); // ручной старт преобразования
-    while (ADCSRA & (1 << ADSC))
-      ;                   // пока преобразование не готово - ждем
-    Cansider_Temp += ADC; // FanTemp
-  }
-  Cansider_Temp = Cansider_Temp >> 2;
+// #ifdef __AVR_ATmega328PB__ // Тест выравнивание темп
+//   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
+//   {
+//     ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX0)); // ADC_A2
+//     ADMUX |= (1 << MUX1);
+//     ADCSRA |= (1 << ADSC); // ручной старт преобразования
+//     while (ADCSRA & (1 << ADSC))
+//       ;                   // пока преобразование не готово - ждем
+//     Cansider_Temp += ADC; // FanTemp
+//   }
+//   Cansider_Temp = Cansider_Temp >> 2;
 
-  Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
+//   Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
 
-  for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
-  {
-    ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX1) | (1 << MUX0)); // ADC_A2
-    ADMUX |= (1 << MUX1);
-    ADMUX |= (1 << MUX2);
-    ADCSRA |= (1 << ADSC); // ручной старт преобразования
-    while (ADCSRA & (1 << ADSC))
-      ;                    // пока преобразование не готово - ждем
-    Cansider_Temp2 += ADC; // FanTemp
-  }
-  Cansider_Temp2 = Cansider_Temp2 >> 2;
+//   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
+//   {
+//     ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX1) | (1 << MUX0)); // ADC_A2
+//     ADMUX |= (1 << MUX1);
+//     ADMUX |= (1 << MUX2);
+//     ADCSRA |= (1 << ADSC); // ручной старт преобразования
+//     while (ADCSRA & (1 << ADSC))
+//       ;                    // пока преобразование не готово - ждем
+//     Cansider_Temp2 += ADC; // FanTemp
+//   }
+//   Cansider_Temp2 = Cansider_Temp2 >> 2;
 
-  Cansider_Temp2 = (Cansider_Temp2 / 4096.0 * ADC_REF * 1000.0);
+//   Cansider_Temp2 = (Cansider_Temp2 / 4096.0 * ADC_REF * 1000.0);
 
-  Cansider_Temp_Pr = Cansider_Temp - Cansider_Temp2;
-#endif
+//   Cansider_Temp_Pr = Cansider_Temp - Cansider_Temp2;
+// #endif
 }
 
 #ifdef __AVR_ATmega328PB__
@@ -1528,11 +1528,11 @@ void loop()
       // lcd.print("                ");
       lcd.setCursor(0, 1);
       // lcd.print("T1:");
-      // lcd.print(Cansider_Temp / 10.0, 1);
+      lcd.print(Cansider_Temp2 / 10.0, 1);
       // lcd.print("F:");
       // lcd.print(reserved[1]);
       // lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
-      lcd.print(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
+      //lcd.print(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
       // lcd.setCursor(5, 1);
