@@ -75,6 +75,7 @@ extern "C" {
 #define DIR_GPIO_Port GPIOB
 #define FLOW_SENS_Pin GPIO_PIN_12
 #define FLOW_SENS_GPIO_Port GPIOB
+#define FLOW_SENS_EXTI_IRQn EXTI15_10_IRQn
 #define LEVEL_SENS_Pin GPIO_PIN_13
 #define LEVEL_SENS_GPIO_Port GPIOB
 #define FAN_1_Pin GPIO_PIN_14

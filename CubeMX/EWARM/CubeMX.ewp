@@ -1097,21 +1097,6 @@
         <name>$PROJ_DIR$\..\Src\main.c</name>
       </file>
       <file>
-        <name>$PROJ_DIR$/../Src/gpio.c</name>
-      </file>
-      <file>
-        <name>$PROJ_DIR$/../Src/adc.c</name>
-      </file>
-      <file>
-        <name>$PROJ_DIR$/../Src/i2c.c</name>
-      </file>
-      <file>
-        <name>$PROJ_DIR$/../Src/iwdg.c</name>
-      </file>
-      <file>
-        <name>$PROJ_DIR$/../Src/usart.c</name>
-      </file>
-      <file>
         <name>$PROJ_DIR$\..\Src\usb_device.c</name>
       </file>
       <file>

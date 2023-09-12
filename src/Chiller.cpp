@@ -540,8 +540,14 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : FLOW_SENS_Pin LEVEL_SENS_Pin FAN_1_Pin FAN_2_Pin */
-  GPIO_InitStruct.Pin = FLOW_SENS_Pin | LEVEL_SENS_Pin | FAN_1_Pin | FAN_2_Pin;
+  /*Configure GPIO pin : FLOW_SENS_Pin */
+  GPIO_InitStruct.Pin = FLOW_SENS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_IT_RISING;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(FLOW_SENS_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : LEVEL_SENS_Pin FAN_1_Pin FAN_2_Pin */
+  GPIO_InitStruct.Pin = LEVEL_SENS_Pin | FAN_1_Pin | FAN_2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
@@ -558,6 +564,10 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   HAL_GPIO_Init(RS_DIR_GPIO_Port, &GPIO_InitStruct);
+
+  /* EXTI interrupt init*/
+  HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
+  // HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
   /* USER CODE END MX_GPIO_Init_2 */
@@ -601,8 +611,8 @@ void USART1_IRQHandler(void)
             if (!Chiler_On)
             {
               Chiler_On = true;
-              // PCICR |= (1 << PCIE0); // прерывания для FS
-              varTime = millis(); // Сбрасываем счётчик и сохраняем время расчёта
+              HAL_NVIC_EnableIRQ(EXTI15_10_IRQn); // прерывания для FS
+              varTime = millis();                 // Сбрасываем счётчик и сохраняем время расчёта
               LowPressure = false;
             }
             break;
@@ -662,6 +672,41 @@ void USART1_IRQHandler(void)
           }
         }
       }
+    }
+  }
+}
+
+/**
+ * @brief This function handles EXTI line[15:10] interrupts.
+ */
+void EXTI15_10_IRQHandler(void)
+{
+  /* USER CODE BEGIN EXTI15_10_IRQn 0 */
+
+  /* USER CODE END EXTI15_10_IRQn 0 */
+  HAL_GPIO_EXTI_IRQHandler(FLOW_SENS_Pin);
+  /* USER CODE BEGIN EXTI15_10_IRQn 1 */
+
+  /* USER CODE END EXTI15_10_IRQn 1 */
+}
+
+/**
+ * @brief  EXTI line detection callbacks.
+ * @param  GPIO_Pin: Specifies the pins connected EXTI line
+ * @retval None
+ */
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
+{
+  if (GPIO_Pin == FLOW_SENS_Pin) // если прерывание поступило от ножки FS
+  {
+    Serial.println("Clicllll");
+    ticks++;
+
+    if ((varTime + 1000) < millis() || varTime > millis())
+    { // Если c момента последнего расчёта прошла 1 секунда, или произошло переполнение millis то ...
+      reserved[1] = ticks;
+      ticks = 0;
+      varTime = millis(); // Сбрасываем счётчик и сохраняем время расчёта
     }
   }
 }
@@ -807,36 +852,36 @@ void setup()
   lcd.clear();
 #endif
 
-// #ifdef __AVR_ATmega328PB__ // Тест выравнивание темп
-//   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
-//   {
-//     ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX0)); // ADC_A2
-//     ADMUX |= (1 << MUX1);
-//     ADCSRA |= (1 << ADSC); // ручной старт преобразования
-//     while (ADCSRA & (1 << ADSC))
-//       ;                   // пока преобразование не готово - ждем
-//     Cansider_Temp += ADC; // FanTemp
-//   }
-//   Cansider_Temp = Cansider_Temp >> 2;
+  // #ifdef __AVR_ATmega328PB__ // Тест выравнивание темп
+  //   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
+  //   {
+  //     ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX0)); // ADC_A2
+  //     ADMUX |= (1 << MUX1);
+  //     ADCSRA |= (1 << ADSC); // ручной старт преобразования
+  //     while (ADCSRA & (1 << ADSC))
+  //       ;                   // пока преобразование не готово - ждем
+  //     Cansider_Temp += ADC; // FanTemp
+  //   }
+  //   Cansider_Temp = Cansider_Temp >> 2;
 
-//   Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
+  //   Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
 
-//   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
-//   {
-//     ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX1) | (1 << MUX0)); // ADC_A2
-//     ADMUX |= (1 << MUX1);
-//     ADMUX |= (1 << MUX2);
-//     ADCSRA |= (1 << ADSC); // ручной старт преобразования
-//     while (ADCSRA & (1 << ADSC))
-//       ;                    // пока преобразование не готово - ждем
-//     Cansider_Temp2 += ADC; // FanTemp
-//   }
-//   Cansider_Temp2 = Cansider_Temp2 >> 2;
+  //   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
+  //   {
+  //     ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX1) | (1 << MUX0)); // ADC_A2
+  //     ADMUX |= (1 << MUX1);
+  //     ADMUX |= (1 << MUX2);
+  //     ADCSRA |= (1 << ADSC); // ручной старт преобразования
+  //     while (ADCSRA & (1 << ADSC))
+  //       ;                    // пока преобразование не готово - ждем
+  //     Cansider_Temp2 += ADC; // FanTemp
+  //   }
+  //   Cansider_Temp2 = Cansider_Temp2 >> 2;
 
-//   Cansider_Temp2 = (Cansider_Temp2 / 4096.0 * ADC_REF * 1000.0);
+  //   Cansider_Temp2 = (Cansider_Temp2 / 4096.0 * ADC_REF * 1000.0);
 
-//   Cansider_Temp_Pr = Cansider_Temp - Cansider_Temp2;
-// #endif
+  //   Cansider_Temp_Pr = Cansider_Temp - Cansider_Temp2;
+  // #endif
 }
 
 #ifdef __AVR_ATmega328PB__
@@ -1278,8 +1323,8 @@ void Control_Values()
     if (Cansider_Temp > Cansider_Sp)
     {
 #ifdef STM32F10X_MD
-      digitalWrite(Valve_2_Cold, LOW);
-      digitalWrite(Valve_1_Hot, HIGH);
+      HAL_GPIO_WritePin(VALVE_2_GPIO_Port, VALVE_2_Pin, GPIO_PIN_RESET);
+      HAL_GPIO_WritePin(VALVE_1_GPIO_Port, VALVE_1_Pin, GPIO_PIN_SET);
 #else
       digitalWrite(Valve_2_Cold, HIGH);
       digitalWrite(Valve_1_Hot, LOW);
@@ -1288,8 +1333,8 @@ void Control_Values()
     else if (Cansider_Temp < uint16_t(Cansider_Sp - Cansider_Gb))
     {
 #ifdef STM32F10X_MD
-      digitalWrite(Valve_2_Cold, HIGH);
-      digitalWrite(Valve_1_Hot, LOW);
+      HAL_GPIO_WritePin(VALVE_2_GPIO_Port, VALVE_2_Pin, GPIO_PIN_SET);
+      HAL_GPIO_WritePin(VALVE_1_GPIO_Port, VALVE_1_Pin, GPIO_PIN_RESET);
 #else
       digitalWrite(Valve_2_Cold, LOW);
       digitalWrite(Valve_1_Hot, HIGH);
@@ -1299,8 +1344,8 @@ void Control_Values()
   else
   {
 #ifdef STM32F10X_MD
-    digitalWrite(Valve_1_Hot, LOW);
-    digitalWrite(Valve_2_Cold, LOW);
+    HAL_GPIO_WritePin(VALVE_1_GPIO_Port, VALVE_1_Pin, GPIO_PIN_RESET);
+    HAL_GPIO_WritePin(VALVE_2_GPIO_Port, VALVE_2_Pin, GPIO_PIN_RESET);
 #else
     digitalWrite(Valve_1_Hot, HIGH);
     digitalWrite(Valve_2_Cold, HIGH);
@@ -1439,8 +1484,12 @@ void loop()
 
     if (PumpDelay_Off)
       PumpDelay_Off--;
-
+#ifdef __AVR_ATmega328PB__
     if (digitalRead(WL))
+#endif
+#ifdef STM32F10X_MD
+    if (HAL_GPIO_ReadPin(LEVEL_SENS_GPIO_Port, LEVEL_SENS_Pin))
+#endif
     {
       reserved[0] |= CL_WATER_LEVEL_ERR;
     }
@@ -1532,7 +1581,7 @@ void loop()
       // lcd.print("F:");
       // lcd.print(reserved[1]);
       // lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
-      //lcd.print(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
+      // lcd.print(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
       // lcd.setCursor(5, 1);
@@ -1573,14 +1622,14 @@ void loop()
     HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
     adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
     HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
-// Serial.println(3.290 / 4095.0 * adc, 3);
-// Serial.println(ADC_REF / adc * 4095.0, 3);
+    Serial.println(3.290 / 4095.0 * adc, 3);
+    Serial.println(ADC_REF / adc * 4095.0, 3);
 #endif
 
     if (Chiler_On)
     {
 #ifdef STM32F10X_MD
-      digitalWrite(PUMP, LOW);
+      HAL_GPIO_WritePin(PUMP_GPIO_Port, PUMP_Pin, GPIO_PIN_RESET);
 #else
       digitalWrite(PUMP, HIGH);
 #endif
@@ -1588,7 +1637,7 @@ void loop()
       {
         Chiller_Switch = true;
 #ifdef STM32F10X_MD
-        digitalWrite(Compressor, LOW);
+        HAL_GPIO_WritePin(RELAY_GPIO_Port, RELAY_Pin, GPIO_PIN_RESET);
 #else
         digitalWrite(Compressor, HIGH);
 #endif
@@ -1600,15 +1649,18 @@ void loop()
 #ifdef __AVR_ATmega328PB__
       PCICR &= ~(1 << PCIE0); // прерывания выкл для FS
 #endif
+#ifdef STM32F10X_MD
+      HAL_NVIC_DisableIRQ(EXTI15_10_IRQn);
+#endif
       reserved[1] = 0;
 #ifdef STM32F10X_MD
-      digitalWrite(Compressor, HIGH);
+      HAL_GPIO_WritePin(RELAY_GPIO_Port, RELAY_Pin, GPIO_PIN_SET);
 #else
       digitalWrite(Compressor, LOW);
 #endif
       if (PumpDelay_Off == 0)
 #ifdef STM32F10X_MD
-        digitalWrite(PUMP, HIGH);
+        HAL_GPIO_WritePin(PUMP_GPIO_Port, PUMP_Pin, GPIO_PIN_SET);
 #else
         digitalWrite(PUMP, LOW);
 #endif
@@ -1638,8 +1690,12 @@ void loop()
     Press_Temp = Lookup();
 
     regulator.input = float(PressureTransducer);
-
+#ifdef __AVR_ATmega328PB__
     if (digitalRead(Valve_1_Hot))
+#endif
+#ifdef STM32F10X_MD
+    if (!HAL_GPIO_ReadPin(VALVE_1_GPIO_Port, VALVE_1_Pin))
+#endif
     {
       stepper.setTarget(200); // в шагах
     }
@@ -1655,7 +1711,7 @@ void loop()
       if (Cansider_Temp < (Cansider_Sp - 10))
       {
 #ifdef STM32F10X_MD
-        digitalWrite(Valve_1_Hot, LOW);
+        HAL_GPIO_WritePin(VALVE_1_GPIO_Port, VALVE_1_Pin, GPIO_PIN_RESET);
 #else
         digitalWrite(Valve_1_Hot, HIGH);
 #endif
@@ -1741,6 +1797,9 @@ void loop()
       Chiler_On = true;
 #ifdef __AVR_ATmega328PB__
       PCICR |= (1 << PCIE0); // прерывания для FS
+#endif
+#ifdef STM32F10X_MD
+      HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 #endif
       varTime = millis(); // Сбрасываем счётчик и сохраняем время расчёта
       LowPressure = false;
