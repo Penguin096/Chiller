@@ -72,51 +72,6 @@
 #define PIN_DIR PB11
 #define DS_PIN PA2 // пин для термометров
 
-// #define RELAY_Pin GPIO_PIN_3
-// #define RELAY_GPIO_Port GPIOB
-// #define FAN_Pin GPIO_PIN_6
-// #define FAN_GPIO_Port GPIOB
-// #define VALVE_1_Pin GPIO_PIN_4
-// #define VALVE_1_GPIO_Port GPIOB
-// #define VALVE_2_Pin GPIO_PIN_5
-// #define VALVE_2_GPIO_Port GPIOB
-// #define RS_DIR_Pin GPIO_PIN_15
-// #define RS_DIR_GPIO_Port GPIOA
-// #define PUMP_Pin GPIO_PIN_7
-// #define PUMP_GPIO_Port GPIOB
-// // пины для подключения контактов STEP, DIR
-// #define STEP_Pin GPIO_PIN_10
-// #define STEP_GPIO_Port GPIOB
-// #define DIR_Pin GPIO_PIN_11
-// #define DIR_GPIO_Port GPIOB
-// #define EN_4988_Pin GPIO_PIN_1
-// #define EN_4988_GPIO_Port GPIOB
-
-// #define BUTTON_Pin GPIO_PIN_13
-// #define BUTTON_GPIO_Port GPIOC
-// #define LEVEL_SENS_Pin GPIO_PIN_13
-// #define LEVEL_SENS_GPIO_Port GPIOB
-// #define FLOW_SENS_Pin GPIO_PIN_12
-// #define FLOW_SENS_GPIO_Port GPIOB
-// #define FAN_1_Pin GPIO_PIN_14
-// #define FAN_1_GPIO_Port GPIOB
-// #define FAN_2_Pin GPIO_PIN_15
-// #define FAN_2_GPIO_Port GPIOB
-// #define FAN_3_Pin GPIO_PIN_8
-// #define FAN_3_GPIO_Port GPIOA
-
-// #define P_SENSE_Pin GPIO_PIN_0
-// #define P_SENSE_GPIO_Port GPIOA
-// #define T_SENSE_Pin GPIO_PIN_1
-// #define T_SENSE_GPIO_Port GPIOA
-// #define C_SENSE_Pin GPIO_PIN_2
-// #define C_SENSE_GPIO_Port GPIOA
-// #define R_SENSE_Pin GPIO_PIN_3
-// #define R_SENSE_GPIO_Port GPIOA
-
-// #define DS_PIN_PIN GPIO_PIN_15 // пин для термометров
-// #define DS_PIN_GPIO_Port GPIOA
-
 #endif
 
 // #define FanProtec
