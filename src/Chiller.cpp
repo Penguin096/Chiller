@@ -51,12 +51,13 @@
 #include <Arduino.h>
 
 #include "../CubeMX/Inc/main.h"
-//#include "usb_device.h"
-// #include "stm32f1xx_hal.h"
-// #include "stm32f1xx_hal_adc.h"
-// #include "stm32f1xx_hal_iwdg.h"
+// #include "usb_device.h"
+//  #include "stm32f1xx_hal.h"
+//  #include "stm32f1xx_hal_adc.h"
+//  #include "stm32f1xx_hal_iwdg.h"
 
 #define ADC_REF 1.208
+#define RXBUFFERSIZE 15
 
 #define Button PC13
 #define Compressor PB3
@@ -308,7 +309,10 @@ IWDG_HandleTypeDef hiwdg;
 
 UART_HandleTypeDef huart1;
 
-PCD_HandleTypeDef hpcd_USB_FS;
+// PCD_HandleTypeDef hpcd_USB_FS;
+
+/* Buffer used for reception */
+uint8_t aRxBuffer[RXBUFFERSIZE];
 
 /**
  * @brief System Clock Configuration
@@ -491,7 +495,11 @@ static void MX_USART1_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART1_Init 2 */
-
+  /*##-4- Put UART peripheral in reception process ###########################*/
+  if (HAL_UART_Receive_IT(&huart1, (uint8_t *)aRxBuffer, RXBUFFERSIZE) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE END USART1_Init 2 */
 }
 
@@ -595,6 +603,110 @@ static void MX_GPIO_Init(void)
   /* USER CODE BEGIN MX_GPIO_Init_2 */
   /* USER CODE END MX_GPIO_Init_2 */
 }
+
+/**
+ * @brief This function handles USART1 global interrupt.
+ */
+void USART1_IRQHandler(void)
+{
+
+  static uint8_t CountArr;     // счетчик принятых байтов
+  static uint8_t IncomArr[14]; // входящий массив
+  uint8_t SendArr[14];         // исходящий массив
+  bool ReadOk;
+  bool send;
+  if ((USART1->SR & USART_SR_RXNE) != 0)
+  {
+    IncomArr[CountArr] = USART1->DR; // принимаем байт в массив
+    if (IncomArr[0] == BUS_RET_COMMAND_HEAD && ReadOk == false)
+    {
+      CountArr++;
+      if (CountArr == sizeof(IncomArr))
+      { // если приняли все байты
+        CountArr = 0;
+        if ((IncomArr[1] == default_ID_COOLING) && (IncomArr[11] == tail) && (IncomArr[12] == tail) && (IncomArr[13] == tail))
+          ReadOk = true;
+
+        if (ReadOk)
+        {
+          Comm_timeout = millis();
+
+          SendArr[0] = BUS_RET_COMMAND_HEAD;
+          SendArr[1] = default_ID_COOLING;
+          SendArr[2] = IncomArr[2];
+          switch (IncomArr[2])
+          {
+          case WATER_ON:
+            SendArr[5] = Chiler_On;
+            send = true;
+            if (!Chiler_On)
+            {
+              Chiler_On = true;
+              // PCICR |= (1 << PCIE0); // прерывания для FS
+              varTime = millis(); // Сбрасываем счётчик и сохраняем время расчёта
+              LowPressure = false;
+            }
+            break;
+          case WATER_OFF:
+            Chiler_On = false;
+            PumpDelay_Off = Pump_Off;
+            break;
+          case CL_SET_TEMP:
+            // Cansider_Sp = (IncomArr[4] << 8) | IncomArr[3];
+            break;
+          case CL_GET_SET_TEMP:
+            SendArr[5] = Cansider_Sp & 0xff;
+            SendArr[6] = Cansider_Sp >> 8;
+            send = true;
+            break;
+          case CL_GET_STATUS:
+            SendArr[3] = Fan_Ctrl_Temp & 0xff;
+            SendArr[4] = Fan_Ctrl_Temp >> 8;
+            SendArr[5] = Cansider_Temp & 0xff;
+            SendArr[6] = Cansider_Temp >> 8;
+            SendArr[7] = reserved[0];
+            SendArr[8] = (reserved[1] > 30) ? reserved[1] : 30;
+            SendArr[9] = reserved[2];
+            SendArr[10] = reserved[3];
+            send = true;
+            break;
+          case CL_PUMP_START:
+            Power_Laser = pow((short)((IncomArr[4] << 8) | IncomArr[3]), 3) * ((short)((IncomArr[6] << 8) | IncomArr[5])) * 0.000001 * IncomArr[7] / pow(40, 2); // приблизительный расчет мощности лазера
+            break;
+          case CL_PUMP_STOP:
+            send = true;
+            break;
+          default:
+            return;
+          }
+          SendArr[11] = tail;
+          SendArr[12] = tail;
+          SendArr[13] = tail;
+
+          if (send)
+          {
+            HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_SET);
+            for (uint8_t i = 0; i < sizeof(SendArr); i++)
+            {
+              while ((USART1->SR & USART_SR_TXE) == 0)
+                ;                      // ждем опустошения буфера
+              USART1->DR = SendArr[i]; // отправляем байт
+              // SendArr[i] = 0;    // сразу же чистим переменную
+            }
+            while ((USART1->SR & USART_SR_TXE) == 0)
+              ; // ждем опустошения буфера
+            for (int i = 0; i < 1000; i++)
+            {
+              asm("NOP");
+            }
+            HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_RESET);
+          }
+        }
+      }
+    }
+  }
+}
+
 #endif
 
 void setup()
@@ -663,7 +775,6 @@ void setup()
     /* Calibration Error */
     Error_Handler();
   }
-
 #endif
 
 #ifdef __AVR_ATmega328PB__
@@ -1155,7 +1266,11 @@ void Control_Fan()
   {
     Fan_PWM = 0;
   }
+#ifdef STM32F10X_MD
+  analogWrite(FAN, 255 - Fan_PWM); // в оригинале 200Гц
+#else
   analogWrite(FAN, Fan_PWM); // в оригинале 200Гц
+#endif
   reserved[2] = 100 / 255 * Fan_PWM;
 }
 
@@ -1165,19 +1280,34 @@ void Control_Values()
   {
     if (Cansider_Temp > Cansider_Sp)
     {
+#ifdef STM32F10X_MD
+      digitalWrite(Valve_2_Cold, LOW);
+      digitalWrite(Valve_1_Hot, HIGH);
+#else
       digitalWrite(Valve_2_Cold, HIGH);
       digitalWrite(Valve_1_Hot, LOW);
+#endif
     }
     else if (Cansider_Temp < uint16_t(Cansider_Sp - Cansider_Gb))
     {
+#ifdef STM32F10X_MD
+      digitalWrite(Valve_2_Cold, HIGH);
+      digitalWrite(Valve_1_Hot, LOW);
+#else
       digitalWrite(Valve_2_Cold, LOW);
       digitalWrite(Valve_1_Hot, HIGH);
+#endif
     }
   }
   else
   {
+#ifdef STM32F10X_MD
+    digitalWrite(Valve_1_Hot, LOW);
+    digitalWrite(Valve_2_Cold, LOW);
+#else
     digitalWrite(Valve_1_Hot, HIGH);
     digitalWrite(Valve_2_Cold, HIGH);
+#endif
     TestStart = false;
   }
 }
@@ -1251,12 +1381,12 @@ void readTemp()
 void loop()
 {
 #ifdef STM32F10X_MD
-  if (Serial)
-  { // USB  подключен
-  }
-  else
-  {
-  }
+  // if (Serial)
+  // { // USB  подключен
+  // }
+  // else
+  // {
+  // }
 #endif
 #ifdef __AVR_ATmega328PB__
   wdt_reset();
@@ -1435,11 +1565,19 @@ void loop()
 
     if (Chiler_On)
     {
+#ifdef STM32F10X_MD
+      digitalWrite(PUMP, LOW);
+#else
       digitalWrite(PUMP, HIGH);
+#endif
       if (reserved[1] > 35)
       {
         Chiller_Switch = true;
+#ifdef STM32F10X_MD
+        digitalWrite(Compressor, LOW);
+#else
         digitalWrite(Compressor, HIGH);
+#endif
         reserved[0] &= ~(CL_WATER_OFF);
       }
     }
@@ -1449,9 +1587,17 @@ void loop()
       PCICR &= ~(1 << PCIE0); // прерывания выкл для FS
 #endif
       reserved[1] = 0;
+#ifdef STM32F10X_MD
+      digitalWrite(Compressor, HIGH);
+#else
       digitalWrite(Compressor, LOW);
+#endif
       if (PumpDelay_Off == 0)
+#ifdef STM32F10X_MD
+        digitalWrite(PUMP, HIGH);
+#else
         digitalWrite(PUMP, LOW);
+#endif
       reserved[0] |= CL_WATER_OFF;
     }
 
@@ -1494,7 +1640,11 @@ void loop()
 
       if (Cansider_Temp < (Cansider_Sp - 10))
       {
+#ifdef STM32F10X_MD
+        digitalWrite(Valve_1_Hot, LOW);
+#else
         digitalWrite(Valve_1_Hot, HIGH);
+#endif
       }
 #ifdef __AVR_ATmega328PB__
 #ifdef FanProtec
