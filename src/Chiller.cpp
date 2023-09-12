@@ -11,7 +11,7 @@
 #include <avr/wdt.h>
 #include <EEPROM.h>
 
-#define ADC_REF 1.094
+#define ADC_REF 1.096
 #define Button 2
 #define Compressor 5
 #define FAN 3
@@ -132,6 +132,10 @@ bool TestStart;
 
 uint16_t PressureTransducer;
 uint16_t Cansider_Temp;
+#ifdef __AVR_ATmega328PB__
+uint16_t Cansider_Temp2;
+int16_t Cansider_Temp_Pr;
+#endif
 int16_t Fan_Ctrl_Temp;
 int16_t Test_Temp;
 int16_t Press_Temp;
@@ -802,6 +806,37 @@ void setup()
 #ifdef __AVR_ATmega328PB__
   lcd.clear();
 #endif
+
+#ifdef __AVR_ATmega328PB__ // Тест выравнивание темп
+  for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
+  {
+    ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX0)); // ADC_A2
+    ADMUX |= (1 << MUX1);
+    ADCSRA |= (1 << ADSC); // ручной старт преобразования
+    while (ADCSRA & (1 << ADSC))
+      ;                   // пока преобразование не готово - ждем
+    Cansider_Temp += ADC; // FanTemp
+  }
+  Cansider_Temp = Cansider_Temp >> 2;
+
+  Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
+
+  for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
+  {
+    ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX1) | (1 << MUX0)); // ADC_A2
+    ADMUX |= (1 << MUX1);
+    ADMUX |= (1 << MUX2);
+    ADCSRA |= (1 << ADSC); // ручной старт преобразования
+    while (ADCSRA & (1 << ADSC))
+      ;                    // пока преобразование не готово - ждем
+    Cansider_Temp2 += ADC; // FanTemp
+  }
+  Cansider_Temp2 = Cansider_Temp2 >> 2;
+
+  Cansider_Temp2 = (Cansider_Temp2 / 4096.0 * ADC_REF * 1000.0);
+
+  Cansider_Temp_Pr = Cansider_Temp - Cansider_Temp2;
+#endif
 }
 
 #ifdef __AVR_ATmega328PB__
@@ -981,6 +1016,13 @@ int16_t Lookup()
 
 // бегущее среднее
 float expRunningAverage(float newVal)
+{
+  static float filVal = 0;
+  filVal += (newVal - filVal) * 0.25; // коэфф. фильтрации 0.5 Чем он меньше, тем плавнее фильтр
+  return filVal;
+}
+// бегущее среднее3
+float expRunningAverage3(float newVal)
 {
   static float filVal = 0;
   filVal += (newVal - filVal) * 0.25; // коэфф. фильтрации 0.5 Чем он меньше, тем плавнее фильтр
@@ -1284,6 +1326,22 @@ void readTemp()
   Cansider_Temp = Cansider_Temp >> 2;
 
   Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
+
+  for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
+  {
+    ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX1) | (1 << MUX0)); // ADC_A2
+    ADMUX |= (1 << MUX1);
+    ADMUX |= (1 << MUX2);
+    ADCSRA |= (1 << ADSC); // ручной старт преобразования
+    while (ADCSRA & (1 << ADSC))
+      ;                    // пока преобразование не готово - ждем
+    Cansider_Temp2 += ADC; // FanTemp
+  }
+  Cansider_Temp2 = Cansider_Temp2 >> 2;
+
+  Cansider_Temp2 = (Cansider_Temp2 / 4096.0 * ADC_REF * 1000.0);
+  Cansider_Temp2 = expRunningAverage3(Cansider_Temp2);
+  Cansider_Temp2 += Cansider_Temp_Pr;
 #endif
 #ifdef STM32F10X_MD
   ADC_ChannelConfTypeDef sConfig;
@@ -1473,7 +1531,8 @@ void loop()
       // lcd.print(Cansider_Temp / 10.0, 1);
       // lcd.print("F:");
       // lcd.print(reserved[1]);
-      lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
+      // lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
+      lcd.print(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
       // lcd.print(" T2:");
       // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
       // lcd.setCursor(5, 1);
