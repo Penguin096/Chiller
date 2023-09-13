@@ -116,8 +116,10 @@ GyverPID regulator(9.0, 1.0, 0.01); // можно П, И, Д, без dt, dt бу
 byte fanThermometer[] = {0x28, 0x99, 0x1D, 0xFB, 0x0C, 0x00, 0x00, 0xF7};
 byte DS18B20_3[] = {0x28, 0xEB, 0xDD, 0x57, 0x04, 0xE1, 0x3C, 0x11};
 
+#ifdef __AVR_ATmega328PB__
 MicroDS18B20<DS_PIN, fanThermometer> sensor1; // Создаем термометр с адресацией
 MicroDS18B20<DS_PIN, DS18B20_3> sensor2;      // Создаем термометр с адресацией
+#endif
 
 volatile uint8_t Cansider_Sp; // Уставка
 uint8_t Cansider_Gb = 10;     // Гистерезис
@@ -407,26 +409,26 @@ static void MX_I2C1_Init(void)
 }
 
 /**
-* @brief I2C MSP Initialization
-* This function configures the hardware resources used in this example
-* @param hi2c: I2C handle pointer
-* @retval None
-*/
-void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
+ * @brief I2C MSP Initialization
+ * This function configures the hardware resources used in this example
+ * @param hi2c: I2C handle pointer
+ * @retval None
+ */
+void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
 {
   GPIO_InitTypeDef GPIO_InitStruct = {0};
-  if(hi2c->Instance==I2C1)
+  if (hi2c->Instance == I2C1)
   {
-  /* USER CODE BEGIN I2C1_MspInit 0 */
+    /* USER CODE BEGIN I2C1_MspInit 0 */
 
-  /* USER CODE END I2C1_MspInit 0 */
+    /* USER CODE END I2C1_MspInit 0 */
 
     __HAL_RCC_GPIOB_CLK_ENABLE();
     /**I2C1 GPIO Configuration
     PB8     ------> I2C1_SCL
     PB9     ------> I2C1_SDA
     */
-    GPIO_InitStruct.Pin = SCL_Pin|SDA_Pin;
+    GPIO_InitStruct.Pin = SCL_Pin | SDA_Pin;
     GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
     GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
     HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
@@ -435,11 +437,10 @@ void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
 
     /* Peripheral clock enable */
     __HAL_RCC_I2C1_CLK_ENABLE();
-  /* USER CODE BEGIN I2C1_MspInit 1 */
+    /* USER CODE BEGIN I2C1_MspInit 1 */
 
-  /* USER CODE END I2C1_MspInit 1 */
+    /* USER CODE END I2C1_MspInit 1 */
   }
-
 }
 
 /**
@@ -1460,6 +1461,7 @@ void readTemp()
 
   Cansider_Temp = expRunningAverage(Cansider_Temp);
 
+#ifdef __AVR_ATmega328PB__
   if (sensor1.readTemp())
     Fan_Ctrl_Temp = int(sensor1.getTemp() * 10.0);
   else
@@ -1474,6 +1476,38 @@ void readTemp()
 
   sensor1.requestTemp(); // Запрашиваем преобразование температуры, но не ждем.
   sensor2.requestTemp();
+#endif
+#ifdef STM32F10X_MD
+  ADC_ChannelConfTypeDef sConfig;
+
+  sConfig.Channel = ADC_CHANNEL_VREFINT;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  HAL_ADC_Start(&hadc1);
+  HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
+  adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
+  HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
+
+  sConfig.Channel = ADC_CHANNEL_2;
+  sConfig.Rank = ADC_REGULAR_RANK_1;
+  sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+  if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  HAL_ADC_Start(&hadc1);
+  HAL_ADC_PollForConversion(&hadc1, 100);             // ожидаем окончания преобразования
+  Fan_Ctrl_Temp = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
+  HAL_ADC_Stop(&hadc1);                               // останавливаем АЦП (не обязательно)
+
+  Fan_Ctrl_Temp = 1 / ((float)((1 << 12) - 1) / Fan_Ctrl_Temp - 1.0f);
+  Fan_Ctrl_Temp = (log(Fan_Ctrl_Temp) / 3950) + 1.0f / (25 + 273.15f);
+  Fan_Ctrl_Temp = (1.0f / Fan_Ctrl_Temp - 273.15f) * 10;
+#endif
 }
 
 void loop()
