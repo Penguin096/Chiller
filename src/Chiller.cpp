@@ -1673,6 +1673,10 @@ void loop()
     if (Wire.endTransmission())
       lcd.init();
 #endif
+#ifdef STM32F10X_MD
+    if (HAL_I2C_IsDeviceReady(&hi2c1, (0x27 << 1), 1, 10))
+      lcd.init();
+#endif
 
 #ifdef FanProtec
     if (Fan1_Off >= 20 || Fan2_Off >= 20 || Fan3_Off >= 20)
