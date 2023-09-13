@@ -105,7 +105,10 @@
 
 #ifdef __AVR_ATmega328PB__
 LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
+#else
+HD44780_LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a 16 chars and 2 line display
 #endif
+
 EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
 GyverPID regulator(9.0, 1.0, 0.01); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
@@ -401,6 +404,42 @@ static void MX_I2C1_Init(void)
   /* USER CODE BEGIN I2C1_Init 2 */
 
   /* USER CODE END I2C1_Init 2 */
+}
+
+/**
+* @brief I2C MSP Initialization
+* This function configures the hardware resources used in this example
+* @param hi2c: I2C handle pointer
+* @retval None
+*/
+void HAL_I2C_MspInit(I2C_HandleTypeDef* hi2c)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  if(hi2c->Instance==I2C1)
+  {
+  /* USER CODE BEGIN I2C1_MspInit 0 */
+
+  /* USER CODE END I2C1_MspInit 0 */
+
+    __HAL_RCC_GPIOB_CLK_ENABLE();
+    /**I2C1 GPIO Configuration
+    PB8     ------> I2C1_SCL
+    PB9     ------> I2C1_SDA
+    */
+    GPIO_InitStruct.Pin = SCL_Pin|SDA_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
+
+    __HAL_AFIO_REMAP_I2C1_ENABLE();
+
+    /* Peripheral clock enable */
+    __HAL_RCC_I2C1_CLK_ENABLE();
+  /* USER CODE BEGIN I2C1_MspInit 1 */
+
+  /* USER CODE END I2C1_MspInit 1 */
+  }
+
 }
 
 /**
@@ -773,6 +812,7 @@ void setup()
   MX_IWDG_Init();
   MX_ADC1_Init();
   MX_I2C1_Init();
+  HAL_I2C_MspInit(&hi2c1);
   MX_USART1_UART_Init();
   // MX_USB_PCD_Init();
 
@@ -798,22 +838,12 @@ void setup()
 
   // Serial.begin(9600);
 
-#ifdef __AVR_ATmega328PB__
   lcd.init(); // initialize the lcd
 
   // Print a message to the LCD.
   lcd.backlight();
   lcd.setCursor(0, 0);
   lcd.print("OrchiChiller v3");
-#endif
-#ifdef STM32F10X_MD
-  /* Initialize */
-  HD44780_Init(2);
-
-  HD44780_Backlight();
-  HD44780_SetCursor(0, 0);
-  HD44780_PrintStr("OrchiChiller v3");
-#endif
 
 #ifdef __AVR_ATmega328PB__
   // Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
@@ -859,12 +889,8 @@ void setup()
 #ifdef STM32F10X_MD
   HAL_IWDG_Refresh(&hiwdg);
 #endif
-#ifdef __AVR_ATmega328PB__
+
   lcd.clear();
-#endif
-#ifdef STM32F10X_MD
-  HD44780_Clear();
-#endif
 
   // #ifdef __AVR_ATmega328PB__ // Тест выравнивание темп
   //   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
@@ -1325,7 +1351,7 @@ void Control_Fan()
 #ifdef STM32F10X_MD
   analogWrite(FAN, 255 - Fan_PWM); // в оригинале 200Гц
 #else
-  analogWrite(FAN, Fan_PWM); // в оригинале 200Гц
+  analogWrite(FAN, Fan_PWM);                // в оригинале 200Гц
 #endif
   reserved[2] = 100 / 255 * Fan_PWM;
 }
@@ -1540,18 +1566,12 @@ void loop()
 
     if ((reserved[0] || LowPressure || CriticalPressure || Freez_Temp || Fan) && Chiller_Switch)
     {
-#ifdef __AVR_ATmega328PB__
+
       lcd.clear();
       lcd.setCursor(0, 0);
       lcd.print("Error:");
       lcd.setCursor(0, 1);
-#endif
-#ifdef STM32F10X_MD
-      HD44780_Clear();
-      HD44780_SetCursor(0, 0);
-      HD44780_PrintStr("Error:");
-      HD44780_SetCursor(0, 1);
-#endif
+
       String Error;
       if (Freez_Temp)
         Error = "Fan";
@@ -1577,19 +1597,12 @@ void loop()
         Error = "OFF";
       else
         Error = "None";
-#ifdef __AVR_ATmega328PB__
-      lcd.print(Error);
-#endif
-#ifdef STM32F10X_MD
-      HD44780_PrintStr(Error.c_str());
-#endif
+
+      // lcd.print(Error);
     }
     else
     {
-#ifdef __AVR_ATmega328PB__
       lcd.clear();
-      lcd.setCursor(0, 0);
-      // lcd.print("                ");
       lcd.setCursor(0, 0);
       lcd.print("Set:");
       lcd.print(Cansider_Sp / 10.0, 1);
@@ -1597,10 +1610,10 @@ void loop()
       lcd.print(PressureTransducer / 10);
       lcd.print("psi");
       lcd.setCursor(0, 1);
-      // lcd.print("                ");
+      lcd.print("                ");
       lcd.setCursor(0, 1);
       // lcd.print("T1:");
-      lcd.print(Cansider_Temp2 / 10.0, 1);
+      // lcd.print(Cansider_Temp2 / 10.0, 1);
       // lcd.print("F:");
       // lcd.print(reserved[1]);
       // lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
@@ -1614,36 +1627,6 @@ void loop()
       lcd.setCursor(11, 1);
       lcd.print(100.0 / 450.0 * stepper.getCurrent(), 0);
       lcd.print("%");
-#endif
-#ifdef STM32F10X_MD
-      HD44780_Clear();
-      HD44780_SetCursor(0, 0);
-      // HD44780_PrintStr("                ");
-      HD44780_SetCursor(0, 0);
-      HD44780_PrintStr("Set:");
-      //////////HD44780_PrintStr(Cansider_Sp / 10.0, 1);
-      HD44780_SetCursor(10, 0);
-      /////////HD44780_PrintStr(PressureTransducer / 10);
-      HD44780_PrintStr("psi");
-      HD44780_SetCursor(0, 1);
-      // HD44780_PrintStr("                ");
-      HD44780_SetCursor(0, 1);
-      // HD44780_PrintStr("T1:");
-      /////////HD44780_PrintStr(Cansider_Temp2 / 10.0, 1);
-      // HD44780_PrintStr("F:");
-      // HD44780_PrintStr(reserved[1]);
-      // HD44780_PrintStr((Test_Temp - Press_Temp) / 10.0, 1);
-      // HD44780_PrintStr(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
-      // HD44780_PrintStr(" T2:");
-      // HD44780_PrintStr(Fan_Ctrl_Temp / 10.0, 1);
-      // HD44780_SetCursor(5, 1);
-      // HD44780_PrintStr(Power_Laser, 0);
-      // HD44780_PrintStr(" W");
-      // HD44780_PrintStr(Test_Temp / 10.0, 1);
-      HD44780_SetCursor(11, 1);
-      //////////HD44780_PrintStr(100.0 / 450.0 * stepper.getCurrent(), 0);
-      HD44780_PrintStr("%");
-#endif
     }
   }
 
@@ -1807,9 +1790,7 @@ void loop()
   if (enc.click())
   {
     Chiller_Switch = false;
-#ifdef __AVR_ATmega328PB__
     lcd.clear();
-#endif
   }
 
   if (enc.step(1))
@@ -1817,13 +1798,11 @@ void loop()
     Cansider_Sp += step_a;
     if (Cansider_Sp < 50 || Cansider_Sp > 350)
       Cansider_Sp -= step_a;
-#ifdef __AVR_ATmega328PB__
     lcd.setCursor(0, 0);
     lcd.print("                ");
     lcd.setCursor(0, 0);
     lcd.print("Set:");
-    lcd.print(Cansider_Sp / 10.0, 1);
-#endif
+    // lcd.print(Cansider_Sp / 10.0, 1);
   }
   // разворачиваем шаг для изменения в обратную сторону
   // передаём количество предварительных кликов
