@@ -76,15 +76,15 @@ void HD44780_LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsi
 
   // we start in 8bit mode, try to set 4 bit mode
   write4bits(0x03 << 4);
-  HAL_Delay(5); // delayMicroseconds(4500);   // wait min 4.1ms
+  DelayMicroseconds(4500);   // wait min 4.1ms
 
   //  // second try
   write4bits(0x03 << 4);
-  HAL_Delay(5); //  delayMicroseconds(4500); // wait min 4.1ms
+  DelayMicroseconds(4500); // wait min 4.1ms
 
   //  // third go!
   write4bits(0x03 << 4);
-  HAL_Delay(1); //  delayMicroseconds(150);
+  DelayMicroseconds(150);
 
   //  // finally, set to 4-bit interface
   write4bits(0x02 << 4);
@@ -112,7 +112,7 @@ void HD44780_LiquidCrystal_I2C::begin(uint8_t cols, uint8_t lines, uint8_t dotsi
 void HD44780_LiquidCrystal_I2C::clear()
 {
   command(LCD_CLEARDISPLAY); // clear display, set cursor position to zero
-  HAL_Delay(2);              // this command takes a long time!
+  // DelayMicroseconds(2000);              // this command takes a long time!
   if (_oled)
     setCursor(0, 0);
 }
@@ -120,7 +120,7 @@ void HD44780_LiquidCrystal_I2C::clear()
 void HD44780_LiquidCrystal_I2C::home()
 {
   command(LCD_RETURNHOME); // set cursor position to zero
-  HAL_Delay(2);            // this command takes a long time!
+  DelayMicroseconds(2000);            // this command takes a long time!
 }
 
 void HD44780_LiquidCrystal_I2C::setCursor(uint8_t col, uint8_t row)
@@ -262,10 +262,10 @@ void HD44780_LiquidCrystal_I2C::expanderWrite(uint8_t _data)
 void HD44780_LiquidCrystal_I2C::pulseEnable(uint8_t _data)
 {
   expanderWrite(_data | En); // En high
-  HAL_Delay(1);              // enable pulse must be >450ns
+  DelayMicroseconds(1);              // enable pulse must be >450ns
 
   expanderWrite(_data & ~En); // En low
-  HAL_Delay(1);               // commands need > 37us to settle
+  DelayMicroseconds(50);               // commands need > 37us to settle
 }
 
 // // Alias functions
@@ -326,11 +326,13 @@ size_t HD44780_LiquidCrystal_I2C::printNumber(unsigned long n, uint8_t base)
   *str = '\0';
 
   // prevent crash if called with base == 1
-  if (base < 2) {
+  if (base < 2)
+  {
     base = 10;
   }
 
-  do {
+  do
+  {
     unsigned long m = n;
     n /= base;
     char c = m - base * n;
@@ -361,7 +363,7 @@ size_t HD44780_LiquidCrystal_I2C::print(const char str[])
 
 size_t HD44780_LiquidCrystal_I2C::print(char c)
 {
-  char str[]={c};
+  char str[] = {c};
   return print(str);
 }
 
@@ -427,7 +429,7 @@ size_t HD44780_LiquidCrystal_I2C::print(double number, int digits)
 
 size_t HD44780_LiquidCrystal_I2C::print(int n, int base)
 {
-  return print((long) n, base);
+  return print((long)n, base);
 }
 
 size_t HD44780_LiquidCrystal_I2C::print(unsigned int n, int base)
@@ -437,16 +439,22 @@ size_t HD44780_LiquidCrystal_I2C::print(unsigned int n, int base)
 
 size_t HD44780_LiquidCrystal_I2C::print(long n, int base)
 {
-  if (base == 0) {
+  if (base == 0)
+  {
     return print(n);
-  } else if (base == 10) {
-    if (n < 0) {
+  }
+  else if (base == 10)
+  {
+    if (n < 0)
+    {
       int t = print('-');
       n = -n;
       return printNumber(n, 10) + t;
     }
     return printNumber(n, 10);
-  } else {
+  }
+  else
+  {
     return printNumber(n, base);
   }
 }
@@ -487,4 +495,13 @@ inline size_t HD44780_LiquidCrystal_I2C::lcdWrite(uint8_t value)
 {
   send(value, Rs);
   return 1;
+}
+
+void HD44780_LiquidCrystal_I2C::DelayMicroseconds(uint32_t us)
+{
+  int32_t start = DWT->CYCCNT;
+  int32_t cycles = us * (SystemCoreClock / 1000000);
+
+  while ((int32_t)(DWT->CYCCNT) - start < cycles)
+    ;
 }

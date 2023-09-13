@@ -153,6 +153,7 @@ private:
     void pulseEnable(uint8_t);
     inline size_t lcdWrite(uint8_t);
     size_t printNumber(unsigned long, uint8_t);
+    void DelayMicroseconds(uint32_t);
     uint8_t _Addr;
     uint8_t _displayfunction;
     uint8_t _displaycontrol;

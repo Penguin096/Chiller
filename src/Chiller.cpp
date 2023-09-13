@@ -376,6 +376,59 @@ static void MX_ADC1_Init(void)
 }
 
 /**
+ * @brief ADC MSP Initialization
+ * This function configures the hardware resources used in this example
+ * @param hadc: ADC handle pointer
+ * @retval None
+ */
+void HAL_ADC_MspInit(ADC_HandleTypeDef *hadc)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  if (hadc->Instance == ADC1)
+  {
+    /* USER CODE BEGIN ADC1_MspInit 0 */
+
+    /* USER CODE END ADC1_MspInit 0 */
+    /* Peripheral clock enable */
+    __HAL_RCC_ADC1_CLK_ENABLE();
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    /**ADC1 GPIO Configuration
+    PA0-WKUP     ------> ADC1_IN0
+    PA1     ------> ADC1_IN1
+    PA2     ------> ADC1_IN2
+    PA3     ------> ADC1_IN3
+    */
+    GPIO_InitStruct.Pin = P_SENSE_Pin | T_SENS_Pin | C_SENS_Pin | R_SENS_Pin;
+    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    /* USER CODE BEGIN ADC1_MspInit 1 */
+
+    /* USER CODE END ADC1_MspInit 1 */
+  }
+}
+
+/**
+ * Initializes the Global MSP.
+ */
+void HAL_MspInit(void)
+{
+  /* USER CODE BEGIN MspInit 0 */
+
+  /* USER CODE END MspInit 0 */
+
+  __HAL_RCC_AFIO_CLK_ENABLE();
+  __HAL_RCC_PWR_CLK_ENABLE();
+
+  /* System interrupt init*/
+
+  /* USER CODE BEGIN MspInit 1 */
+
+  /* USER CODE END MspInit 1 */
+}
+
+/**
  * @brief I2C1 Initialization Function
  * @param None
  * @retval None
@@ -504,6 +557,47 @@ static void MX_USART1_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE END USART1_Init 2 */
+}
+
+/**
+ * @brief UART MSP Initialization
+ * This function configures the hardware resources used in this example
+ * @param huart: UART handle pointer
+ * @retval None
+ */
+void HAL_UART_MspInit(UART_HandleTypeDef *huart)
+{
+  GPIO_InitTypeDef GPIO_InitStruct = {0};
+  if (huart->Instance == USART1)
+  {
+    /* USER CODE BEGIN USART1_MspInit 0 */
+
+    /* USER CODE END USART1_MspInit 0 */
+    /* Peripheral clock enable */
+    __HAL_RCC_USART1_CLK_ENABLE();
+
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    /**USART1 GPIO Configuration
+    PA9     ------> USART1_TX
+    PA10     ------> USART1_RX
+    */
+    GPIO_InitStruct.Pin = GPIO_PIN_9;
+    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
+    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    GPIO_InitStruct.Pin = GPIO_PIN_10;
+    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+    GPIO_InitStruct.Pull = GPIO_NOPULL;
+    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+    /* USART1 interrupt Init */
+    HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
+    HAL_NVIC_EnableIRQ(USART1_IRQn);
+    /* USER CODE BEGIN USART1_MspInit 1 */
+
+    /* USER CODE END USART1_MspInit 1 */
+  }
 }
 
 // /**
@@ -812,10 +906,13 @@ void setup()
   MX_GPIO_Init();
   MX_IWDG_Init();
   MX_ADC1_Init();
+  HAL_ADC_MspInit(&hadc1);
   MX_I2C1_Init();
   HAL_I2C_MspInit(&hi2c1);
   MX_USART1_UART_Init();
+  HAL_UART_MspInit(&huart1);
   // MX_USB_PCD_Init();
+  HAL_MspInit();
 
   /* Run the ADC calibration */
   if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
@@ -1478,7 +1575,7 @@ void readTemp()
   sensor2.requestTemp();
 #endif
 #ifdef STM32F10X_MD
-  ADC_ChannelConfTypeDef sConfig;
+  // ADC_ChannelConfTypeDef sConfig;
 
   sConfig.Channel = ADC_CHANNEL_VREFINT;
   sConfig.Rank = ADC_REGULAR_RANK_1;
@@ -1504,9 +1601,8 @@ void readTemp()
   Fan_Ctrl_Temp = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
   HAL_ADC_Stop(&hadc1);                               // останавливаем АЦП (не обязательно)
 
-  Fan_Ctrl_Temp = 1 / ((float)((1 << 12) - 1) / Fan_Ctrl_Temp - 1.0f);
-  Fan_Ctrl_Temp = (log(Fan_Ctrl_Temp) / 3950) + 1.0f / (25 + 273.15f);
-  Fan_Ctrl_Temp = (1.0f / Fan_Ctrl_Temp - 273.15f) * 10;
+  Fan_Ctrl_Temp = (1.0f / ((log(1.0 / (4095.0 / Fan_Ctrl_Temp - 1.0f)) / 3950.0) + 1.0f / (25.0 + 273.15f)) - 273.15f) * 10.0;
+
 #endif
 }
 
@@ -1653,7 +1749,7 @@ void loop()
       // lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
       // lcd.print(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
       // lcd.print(" T2:");
-      // lcd.print(Fan_Ctrl_Temp / 10.0, 1);
+      lcd.print(Fan_Ctrl_Temp / 10.0, 1);
       // lcd.setCursor(5, 1);
       // lcd.print(Power_Laser, 0);
       // lcd.print(" W");
