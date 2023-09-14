@@ -46,7 +46,7 @@
 #define RX_COMPLETE_INTERRUPT (1 << RXCIE0)
 
 #endif
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
 
 #include <Arduino.h>
 
@@ -62,14 +62,9 @@
 #define RXBUFFERSIZE 15
 
 #define Button PC13
-#define Compressor PB3
 #define FAN PB6
-#define Valve_1_Hot PB4
-#define Valve_2_Cold PB5
 #define WL PB13
 #define FS PB12
-#define RS485_REDE PA15
-#define PUMP PB7
 #define PIN_STEP PB10
 #define PIN_DIR PB11
 #define DS_PIN PA2 // пин для термометров
@@ -114,7 +109,7 @@ EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
 #ifdef __AVR_ATmega328PB__
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
 #endif
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR, EN_PIN);
 #endif
 GyverPID regulator(9.0, 1.0, 0.01); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
@@ -225,7 +220,7 @@ void USART1_Init()
   sei();
 }
 #endif
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
 void SysTick_Handler(void)
 {
   HAL_IncTick();
@@ -429,6 +424,10 @@ void HAL_MspInit(void)
   __HAL_RCC_PWR_CLK_ENABLE();
 
   /* System interrupt init*/
+
+  /** NOJTAG: JTAG-DP Disabled and SW-DP Enabled
+  */
+  __HAL_AFIO_REMAP_SWJ_NOJTAG();
 
   /* USER CODE BEGIN MspInit 1 */
 
@@ -664,7 +663,7 @@ static void MX_GPIO_Init(void)
   HAL_GPIO_WritePin(GPIOB, STEP_Pin | DIR_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_SET);
+  HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_RESET);
 
   /*Configure GPIO pin : BUTTON_Pin */
   GPIO_InitStruct.Pin = BUTTON_Pin;
@@ -712,7 +711,7 @@ static void MX_GPIO_Init(void)
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  // HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
   /* USER CODE END MX_GPIO_Init_2 */
@@ -731,93 +730,94 @@ void USART1_IRQHandler(void)
   bool send;
   if ((USART1->SR & USART_SR_RXNE) != 0)
   {
-    IncomArr[CountArr] = USART1->DR; // принимаем байт в массив
-    if (IncomArr[0] == BUS_RET_COMMAND_HEAD && ReadOk == false)
-    {
-      CountArr++;
-      if (CountArr == sizeof(IncomArr))
-      { // если приняли все байты
-        CountArr = 0;
-        if ((IncomArr[1] == default_ID_COOLING) && (IncomArr[11] == tail) && (IncomArr[12] == tail) && (IncomArr[13] == tail))
-          ReadOk = true;
+    Serial.println(USART1->DR);
+    // IncomArr[CountArr] = USART1->DR; // принимаем байт в массив
+    // if (IncomArr[0] == BUS_RET_COMMAND_HEAD && ReadOk == false)
+    // {
+    //   CountArr++;
+    //   if (CountArr == sizeof(IncomArr))
+    //   { // если приняли все байты
+    //     CountArr = 0;
+    //     if ((IncomArr[1] == default_ID_COOLING) && (IncomArr[11] == tail) && (IncomArr[12] == tail) && (IncomArr[13] == tail))
+    //       ReadOk = true;
 
-        if (ReadOk)
-        {
-          Comm_timeout = millis();
+    //     if (ReadOk)
+    //     {
+    //       Comm_timeout = millis();
 
-          SendArr[0] = BUS_RET_COMMAND_HEAD;
-          SendArr[1] = default_ID_COOLING;
-          SendArr[2] = IncomArr[2];
-          switch (IncomArr[2])
-          {
-          case WATER_ON:
-            SendArr[5] = Chiler_On;
-            send = true;
-            if (!Chiler_On)
-            {
-              Chiler_On = true;
-              HAL_NVIC_EnableIRQ(EXTI15_10_IRQn); // прерывания для FS
-              varTime = millis();                 // Сбрасываем счётчик и сохраняем время расчёта
-              LowPressure = false;
-            }
-            break;
-          case WATER_OFF:
-            Chiler_On = false;
-            PumpDelay_Off = Pump_Off;
-            break;
-          case CL_SET_TEMP:
-            // Cansider_Sp = (IncomArr[4] << 8) | IncomArr[3];
-            break;
-          case CL_GET_SET_TEMP:
-            SendArr[5] = Cansider_Sp & 0xff;
-            SendArr[6] = Cansider_Sp >> 8;
-            send = true;
-            break;
-          case CL_GET_STATUS:
-            SendArr[3] = Fan_Ctrl_Temp & 0xff;
-            SendArr[4] = Fan_Ctrl_Temp >> 8;
-            SendArr[5] = Cansider_Temp & 0xff;
-            SendArr[6] = Cansider_Temp >> 8;
-            SendArr[7] = reserved[0];
-            SendArr[8] = (reserved[1] > 30) ? reserved[1] : 30;
-            SendArr[9] = reserved[2];
-            SendArr[10] = reserved[3];
-            send = true;
-            break;
-          case CL_PUMP_START:
-            Power_Laser = pow((short)((IncomArr[4] << 8) | IncomArr[3]), 3) * ((short)((IncomArr[6] << 8) | IncomArr[5])) * 0.000001 * IncomArr[7] / pow(40, 2); // приблизительный расчет мощности лазера
-            break;
-          case CL_PUMP_STOP:
-            send = true;
-            break;
-          default:
-            return;
-          }
-          SendArr[11] = tail;
-          SendArr[12] = tail;
-          SendArr[13] = tail;
+    //       SendArr[0] = BUS_RET_COMMAND_HEAD;
+    //       SendArr[1] = default_ID_COOLING;
+    //       SendArr[2] = IncomArr[2];
+    //       switch (IncomArr[2])
+    //       {
+    //       case WATER_ON:
+    //         SendArr[5] = Chiler_On;
+    //         send = true;
+    //         if (!Chiler_On)
+    //         {
+    //           Chiler_On = true;
+    //           HAL_NVIC_EnableIRQ(EXTI15_10_IRQn); // прерывания для FS
+    //           varTime = millis();                 // Сбрасываем счётчик и сохраняем время расчёта
+    //           LowPressure = false;
+    //         }
+    //         break;
+    //       case WATER_OFF:
+    //         Chiler_On = false;
+    //         PumpDelay_Off = Pump_Off;
+    //         break;
+    //       case CL_SET_TEMP:
+    //         // Cansider_Sp = (IncomArr[4] << 8) | IncomArr[3];
+    //         break;
+    //       case CL_GET_SET_TEMP:
+    //         SendArr[5] = Cansider_Sp & 0xff;
+    //         SendArr[6] = Cansider_Sp >> 8;
+    //         send = true;
+    //         break;
+    //       case CL_GET_STATUS:
+    //         SendArr[3] = Fan_Ctrl_Temp & 0xff;
+    //         SendArr[4] = Fan_Ctrl_Temp >> 8;
+    //         SendArr[5] = Cansider_Temp & 0xff;
+    //         SendArr[6] = Cansider_Temp >> 8;
+    //         SendArr[7] = reserved[0];
+    //         SendArr[8] = (reserved[1] > 30) ? reserved[1] : 30;
+    //         SendArr[9] = reserved[2];
+    //         SendArr[10] = reserved[3];
+    //         send = true;
+    //         break;
+    //       case CL_PUMP_START:
+    //         Power_Laser = pow((short)((IncomArr[4] << 8) | IncomArr[3]), 3) * ((short)((IncomArr[6] << 8) | IncomArr[5])) * 0.000001 * IncomArr[7] / pow(40, 2); // приблизительный расчет мощности лазера
+    //         break;
+    //       case CL_PUMP_STOP:
+    //         send = true;
+    //         break;
+    //       default:
+    //         return;
+    //       }
+    //       SendArr[11] = tail;
+    //       SendArr[12] = tail;
+    //       SendArr[13] = tail;
 
-          if (send)
-          {
-            HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_SET);
-            for (uint8_t i = 0; i < sizeof(SendArr); i++)
-            {
-              while ((USART1->SR & USART_SR_TXE) == 0)
-                ;                      // ждем опустошения буфера
-              USART1->DR = SendArr[i]; // отправляем байт
-              // SendArr[i] = 0;    // сразу же чистим переменную
-            }
-            while ((USART1->SR & USART_SR_TXE) == 0)
-              ; // ждем опустошения буфера
-            for (int i = 0; i < 1000; i++)
-            {
-              asm("NOP");
-            }
-            HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_RESET);
-          }
-        }
-      }
-    }
+    //       if (send)
+    //       {
+    //         HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_SET);
+    //         for (uint8_t i = 0; i < sizeof(SendArr); i++)
+    //         {
+    //           while ((USART1->SR & USART_SR_TXE) == 0)
+    //             ;                      // ждем опустошения буфера
+    //           USART1->DR = SendArr[i]; // отправляем байт
+    //           // SendArr[i] = 0;    // сразу же чистим переменную
+    //         }
+    //         while ((USART1->SR & USART_SR_TXE) == 0)
+    //           ; // ждем опустошения буфера
+    //         for (int i = 0; i < 1000; i++)
+    //         {
+    //           asm("NOP");
+    //         }
+    //         HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_RESET);
+    //       }
+    //     }
+    //   }
+    // }
   }
 }
 
@@ -856,186 +856,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 }
 
 #endif
-
-void setup()
-{
-#ifdef __AVR_ATmega328PB__
-  wdt_reset();
-  wdt_enable(WDTO_2S);
-
-  TCCR2B = (TCCR2B & B11111000) | B00000101; // делитель 128 для (245 Гц)
-                                             //  TCCR2B = (TCCR2B & B11111000) | B00000110; //делитель 256 для
-
-  pinMode(LED_BUILTIN, OUTPUT);
-  pinMode(Compressor, OUTPUT);  // PWM //Relay
-  pinMode(FAN, OUTPUT);         // PWM //FAN
-  pinMode(Valve_1_Hot, OUTPUT); //  //Valve
-  pinMode(Valve_2_Cold, OUTPUT);
-  pinMode(RS485_REDE, OUTPUT);
-  pinMode(PUMP, OUTPUT);
-  digitalWrite(RS485_REDE, LOW);
-  pinMode(11, OUTPUT); // TXD1
-  // PORTB &= ~(1 << PB5);
-
-  pinMode(Button, INPUT_PULLUP); // кнопка INT0
-  // pinMode(7, INPUT_PULLUP);      // FAN1
-  // pinMode(8, INPUT_PULLUP);      // FAN2
-  // pinMode(9, INPUT_PULLUP);  // FAN3
-  // pinMode(PIN_STEP, OUTPUT); // STEP
-  // pinMode(PIN_DIR, OUTPUT);  // DIR
-  // digitalWrite(PIN_STEP, LOW);
-  // digitalWrite(PIN_DIR, LOW);
-  pinMode(WL, INPUT_PULLUP); // WL
-  pinMode(FS, INPUT_PULLUP); // FS
-#endif
-#ifdef STM32F10X_MD
-  /* USER CODE BEGIN 1 */
-
-  /* USER CODE END 1 */
-
-  /* MCU Configuration--------------------------------------------------------*/
-
-  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-  HAL_Init();
-
-  /* USER CODE BEGIN Init */
-
-  /* USER CODE END Init */
-
-  /* Configure the system clock */
-  SystemClock_Config();
-
-  /* USER CODE BEGIN SysInit */
-
-  /* USER CODE END SysInit */
-
-  /* Initialize all configured peripherals */
-  MX_GPIO_Init();
-  MX_IWDG_Init();
-  MX_ADC1_Init();
-  HAL_ADC_MspInit(&hadc1);
-  MX_I2C1_Init();
-  HAL_I2C_MspInit(&hi2c1);
-  MX_USART1_UART_Init();
-  HAL_UART_MspInit(&huart1);
-  // MX_USB_PCD_Init();
-  HAL_MspInit();
-
-  /* Run the ADC calibration */
-  if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
-  {
-    /* Calibration Error */
-    Error_Handler();
-  }
-#endif
-
-#ifdef __AVR_ATmega328PB__
-  //  PCICR |= (1 << PCIE0);     // прерывания для FS
-  PCMSK0 |= (1 << (FS - 8)); // прерывания для FS
-
-  ADCSRA |= (1 << ADEN); // set adc enable
-  // ADMUX &= ~(1 << REFS1);                 // ADC_VCC
-  // ADMUX |= (1 << REFS0);
-  ADMUX |= ((1 << REFS1) | (1 << REFS0)); // ADC_1V1
-
-  USART1_Init();
-#endif
-
-// Serial.begin(9600);
-#ifdef STM32F10X_MD
-  if (HAL_I2C_IsDeviceReady(&hi2c1, (0x27 << 1), 1, 10) == HAL_OK)
-  {
-#endif
-    lcd.init(); // initialize the lcd
-
-    // Print a message to the LCD.
-    lcd.backlight();
-    lcd.setCursor(0, 0);
-    lcd.print("OrchiChiller v3");
-    Display_conn = true;
-#ifdef STM32F10X_MD
-  }
-#endif
-
-#ifdef __AVR_ATmega328PB__
-  // Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
-  Cansider_Sp = EEPROM.read(0);
-#endif
-  if (Cansider_Sp < 35 || Cansider_Sp > 250)
-    Cansider_Sp = 100;
-#ifdef __AVR_ATmega328PB__
-  wdt_reset();
-#endif
-#ifdef STM32F10X_MD
-  HAL_IWDG_Refresh(&hiwdg);
-#endif
-
-  int N = simEEPdata[2];
-  simEEPdata[3] = (simEEPdata[3 + N] - simEEPdata[4]) / N; // average step of ADC reading
-
-  // установка макс. скорости в шагах/сек
-  stepper.setMaxSpeed(50);
-  // режим следования к целевй позиции
-  stepper.setRunMode(FOLLOW_POS);
-  // можно установить позицию
-  stepper.setTarget(-500); // в шагах
-  while (stepper.tick())
-  {
-#ifdef __AVR_ATmega328PB__
-    wdt_reset();
-#endif
-#ifdef STM32F10X_MD
-    HAL_IWDG_Refresh(&hiwdg);
-#endif
-  }
-  stepper.setCurrent(0);
-  stepper.setTarget(50); // в шагах
-
-  regulator.setDirection(NORMAL); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
-  regulator.setLimits(0, 450);    // пределы. ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
-  regulator.setpoint = 670;       // сообщаем регулятору, которую он должен поддерживать
-
-#ifdef __AVR_ATmega328PB__
-  wdt_reset();
-#endif
-#ifdef STM32F10X_MD
-  HAL_IWDG_Refresh(&hiwdg);
-#endif
-
-  if (Display_conn)
-    lcd.clear();
-
-  // #ifdef __AVR_ATmega328PB__ // Тест выравнивание темп
-  //   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
-  //   {
-  //     ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX0)); // ADC_A2
-  //     ADMUX |= (1 << MUX1);
-  //     ADCSRA |= (1 << ADSC); // ручной старт преобразования
-  //     while (ADCSRA & (1 << ADSC))
-  //       ;                   // пока преобразование не готово - ждем
-  //     Cansider_Temp += ADC; // FanTemp
-  //   }
-  //   Cansider_Temp = Cansider_Temp >> 2;
-
-  //   Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
-
-  //   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
-  //   {
-  //     ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX1) | (1 << MUX0)); // ADC_A2
-  //     ADMUX |= (1 << MUX1);
-  //     ADMUX |= (1 << MUX2);
-  //     ADCSRA |= (1 << ADSC); // ручной старт преобразования
-  //     while (ADCSRA & (1 << ADSC))
-  //       ;                    // пока преобразование не готово - ждем
-  //     Cansider_Temp2 += ADC; // FanTemp
-  //   }
-  //   Cansider_Temp2 = Cansider_Temp2 >> 2;
-
-  //   Cansider_Temp2 = (Cansider_Temp2 / 4096.0 * ADC_REF * 1000.0);
-
-  //   Cansider_Temp_Pr = Cansider_Temp - Cansider_Temp2;
-  // #endif
-}
 
 #ifdef __AVR_ATmega328PB__
 
@@ -1259,7 +1079,7 @@ void Check_Pressure()
 
   PressureTransducer = ((Pressure / ((50.8 / (ADC_REF / 4096.0 / 0.020)) - (50.8 / (ADC_REF / 4096.0 / 0.004)))) * (PressureTransducer - (50.8 / (ADC_REF / 4096.0 / 0.004))) + (-1.0 * 14.504)) * 10.0; // 3808ацп-20мА //752-4мА
 #endif
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
   ADC_ChannelConfTypeDef sConfig;
 
   sConfig.Channel = ADC_CHANNEL_VREFINT;
@@ -1461,7 +1281,7 @@ void Control_Fan()
   {
     Fan_PWM = 0;
   }
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
   analogWrite(FAN, 255 - Fan_PWM); // в оригинале 200Гц
 #else
   analogWrite(FAN, Fan_PWM);                // в оригинале 200Гц
@@ -1475,7 +1295,7 @@ void Control_Values()
   {
     if (Cansider_Temp > Cansider_Sp)
     {
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
       HAL_GPIO_WritePin(VALVE_2_GPIO_Port, VALVE_2_Pin, GPIO_PIN_RESET);
       HAL_GPIO_WritePin(VALVE_1_GPIO_Port, VALVE_1_Pin, GPIO_PIN_SET);
 #else
@@ -1485,7 +1305,7 @@ void Control_Values()
     }
     else if (Cansider_Temp < uint16_t(Cansider_Sp - Cansider_Gb))
     {
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
       HAL_GPIO_WritePin(VALVE_2_GPIO_Port, VALVE_2_Pin, GPIO_PIN_SET);
       HAL_GPIO_WritePin(VALVE_1_GPIO_Port, VALVE_1_Pin, GPIO_PIN_RESET);
 #else
@@ -1496,7 +1316,7 @@ void Control_Values()
   }
   else
   {
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
     HAL_GPIO_WritePin(VALVE_1_GPIO_Port, VALVE_1_Pin, GPIO_PIN_RESET);
     HAL_GPIO_WritePin(VALVE_2_GPIO_Port, VALVE_2_Pin, GPIO_PIN_RESET);
 #else
@@ -1541,7 +1361,7 @@ void readTemp()
   Cansider_Temp2 = expRunningAverage3(Cansider_Temp2);
   Cansider_Temp2 += Cansider_Temp_Pr;
 #endif
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
   ADC_ChannelConfTypeDef sConfig;
 
   sConfig.Channel = ADC_CHANNEL_VREFINT;
@@ -1589,7 +1409,7 @@ void readTemp()
   sensor1.requestTemp(); // Запрашиваем преобразование температуры, но не ждем.
   sensor2.requestTemp();
 #endif
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
   // ADC_ChannelConfTypeDef sConfig;
 
   sConfig.Channel = ADC_CHANNEL_VREFINT;
@@ -1621,196 +1441,396 @@ void readTemp()
 #endif
 }
 
-void loop()
+int main()
 {
-#ifdef STM32F10X_MD
-  // if (Serial)
-  // { // USB  подключен
-  // }
-  // else
-  // {
-  // }
+#ifdef __AVR_ATmega328PB__
+  wdt_reset();
+  wdt_enable(WDTO_2S);
+
+  TCCR2B = (TCCR2B & B11111000) | B00000101; // делитель 128 для (245 Гц)
+                                             //  TCCR2B = (TCCR2B & B11111000) | B00000110; //делитель 256 для
+
+  pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(Compressor, OUTPUT);  // PWM //Relay
+  pinMode(FAN, OUTPUT);         // PWM //FAN
+  pinMode(Valve_1_Hot, OUTPUT); //  //Valve
+  pinMode(Valve_2_Cold, OUTPUT);
+  pinMode(RS485_REDE, OUTPUT);
+  pinMode(PUMP, OUTPUT);
+  digitalWrite(RS485_REDE, LOW);
+  pinMode(11, OUTPUT); // TXD1
+  // PORTB &= ~(1 << PB5);
+
+  pinMode(Button, INPUT_PULLUP); // кнопка INT0
+  // pinMode(7, INPUT_PULLUP);      // FAN1
+  // pinMode(8, INPUT_PULLUP);      // FAN2
+  // pinMode(9, INPUT_PULLUP);  // FAN3
+  // pinMode(PIN_STEP, OUTPUT); // STEP
+  // pinMode(PIN_DIR, OUTPUT);  // DIR
+  // digitalWrite(PIN_STEP, LOW);
+  // digitalWrite(PIN_DIR, LOW);
+  pinMode(WL, INPUT_PULLUP); // WL
+  pinMode(FS, INPUT_PULLUP); // FS
 #endif
+#ifdef STM32F103xB
+  /* USER CODE BEGIN 1 */
+
+  /* USER CODE END 1 */
+
+  /* MCU Configuration--------------------------------------------------------*/
+
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
+
+  /* USER CODE BEGIN Init */
+
+  /* USER CODE END Init */
+
+  /* Configure the system clock */
+  SystemClock_Config();
+
+  /* USER CODE BEGIN SysInit */
+
+  /* USER CODE END SysInit */
+
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_IWDG_Init();
+  MX_ADC1_Init();
+  HAL_ADC_MspInit(&hadc1);
+  MX_I2C1_Init();
+  HAL_I2C_MspInit(&hi2c1);
+  MX_USART1_UART_Init();
+  HAL_UART_MspInit(&huart1);
+  // MX_USB_PCD_Init();
+  HAL_MspInit();
+
+  /* Run the ADC calibration */
+  if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
+  {
+    /* Calibration Error */
+    Error_Handler();
+  }
+#endif
+
+#ifdef __AVR_ATmega328PB__
+  //  PCICR |= (1 << PCIE0);     // прерывания для FS
+  PCMSK0 |= (1 << (FS - 8)); // прерывания для FS
+
+  ADCSRA |= (1 << ADEN); // set adc enable
+  // ADMUX &= ~(1 << REFS1);                 // ADC_VCC
+  // ADMUX |= (1 << REFS0);
+  ADMUX |= ((1 << REFS1) | (1 << REFS0)); // ADC_1V1
+
+  USART1_Init();
+#endif
+
+// Serial.begin(9600);
+#ifdef STM32F103xB
+  if (HAL_I2C_IsDeviceReady(&hi2c1, (0x27 << 1), 1, 10) == HAL_OK)
+  {
+#endif
+    lcd.init(); // initialize the lcd
+
+    // Print a message to the LCD.
+    lcd.backlight();
+    lcd.setCursor(0, 0);
+    lcd.print("OrchiChiller v3");
+    Display_conn = true;
+#ifdef STM32F103xB
+  }
+#endif
+
+#ifdef __AVR_ATmega328PB__
+  // Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
+  Cansider_Sp = EEPROM.read(0);
+#endif
+  if (Cansider_Sp < 35 || Cansider_Sp > 250)
+    Cansider_Sp = 100;
 #ifdef __AVR_ATmega328PB__
   wdt_reset();
 #endif
-#ifdef STM32F10X_MD
+#ifdef STM32F103xB
   HAL_IWDG_Refresh(&hiwdg);
 #endif
-  stepper.tick();
-  parsing();
-  pos = int(regulator.getResultTimer());
 
-  if ((millis() - time_20) > 2000)
+  int N = simEEPdata[2];
+  simEEPdata[3] = (simEEPdata[3 + N] - simEEPdata[4]) / N; // average step of ADC reading
+
+  // установка макс. скорости в шагах/сек
+  stepper.setMaxSpeed(50);
+  // режим следования к целевй позиции
+  stepper.setRunMode(FOLLOW_POS);
+  // можно установить позицию
+  stepper.setTarget(-500); // в шагах
+  while (stepper.tick())
   {
-    time_20 = millis();
-    if (Chiler_On)
+#ifdef __AVR_ATmega328PB__
+    wdt_reset();
+#endif
+#ifdef STM32F103xB
+    HAL_IWDG_Refresh(&hiwdg);
+#endif
+  }
+  stepper.setCurrent(0);
+  stepper.setTarget(50); // в шагах
+
+  regulator.setDirection(NORMAL); // направление регулирования (NORMAL/REVERSE). ПО УМОЛЧАНИЮ СТОИТ NORMAL
+  regulator.setLimits(0, 450);    // пределы. ПО УМОЛЧАНИЮ СТОЯТ 0 И 255
+  regulator.setpoint = 670;       // сообщаем регулятору, которую он должен поддерживать
+
+#ifdef __AVR_ATmega328PB__
+  wdt_reset();
+#endif
+#ifdef STM32F103xB
+  HAL_IWDG_Refresh(&hiwdg);
+#endif
+
+  if (Display_conn)
+    lcd.clear();
+
+  // #ifdef __AVR_ATmega328PB__ // Тест выравнивание темп
+  //   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
+  //   {
+  //     ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX0)); // ADC_A2
+  //     ADMUX |= (1 << MUX1);
+  //     ADCSRA |= (1 << ADSC); // ручной старт преобразования
+  //     while (ADCSRA & (1 << ADSC))
+  //       ;                   // пока преобразование не готово - ждем
+  //     Cansider_Temp += ADC; // FanTemp
+  //   }
+  //   Cansider_Temp = Cansider_Temp >> 2;
+
+  //   Cansider_Temp = (Cansider_Temp / 4096.0 * ADC_REF * 1000.0);
+
+  //   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
+  //   {
+  //     ADMUX &= ~((1 << MUX3) | (1 << MUX2) | (1 << MUX1) | (1 << MUX0)); // ADC_A2
+  //     ADMUX |= (1 << MUX1);
+  //     ADMUX |= (1 << MUX2);
+  //     ADCSRA |= (1 << ADSC); // ручной старт преобразования
+  //     while (ADCSRA & (1 << ADSC))
+  //       ;                    // пока преобразование не готово - ждем
+  //     Cansider_Temp2 += ADC; // FanTemp
+  //   }
+  //   Cansider_Temp2 = Cansider_Temp2 >> 2;
+
+  //   Cansider_Temp2 = (Cansider_Temp2 / 4096.0 * ADC_REF * 1000.0);
+
+  //   Cansider_Temp_Pr = Cansider_Temp - Cansider_Temp2;
+  // #endif
+
+  while (1)
+  {
+#ifdef STM32F103xB
+    // if (Serial)
+    // { // USB  подключен
+    // }
+    // else
+    // {
+    // }
+#endif
+#ifdef __AVR_ATmega328PB__
+    wdt_reset();
+#endif
+#ifdef STM32F103xB
+    HAL_IWDG_Refresh(&hiwdg);
+#endif
+    stepper.tick();
+    parsing();
+    pos = int(regulator.getResultTimer());
+
+    if ((millis() - time_20) > 2000)
     {
-      if (Cansider_Temp > Cansider_Sp)
+      time_20 = millis();
+      if (Chiler_On)
       {
-        // if (regulator.setpoint > 100)
-        //   regulator.setpoint = regulator.setpoint - 10;
-        if (regulator.setpoint > 670)
-          regulator.setpoint = regulator.setpoint - 10;
-      }
-      else if (Cansider_Temp < Cansider_Sp)
-      {
-        // if (regulator.setpoint < 250)
-        //   regulator.setpoint = regulator.setpoint + 10;
-        if (regulator.setpoint < 900)
-          regulator.setpoint = regulator.setpoint + 10;
+        if (Cansider_Temp > Cansider_Sp)
+        {
+          // if (regulator.setpoint > 100)
+          //   regulator.setpoint = regulator.setpoint - 10;
+          if (regulator.setpoint > 670)
+            regulator.setpoint = regulator.setpoint - 10;
+        }
+        else if (Cansider_Temp < Cansider_Sp)
+        {
+          // if (regulator.setpoint < 250)
+          //   regulator.setpoint = regulator.setpoint + 10;
+          if (regulator.setpoint < 900)
+            regulator.setpoint = regulator.setpoint + 10;
+        }
       }
     }
-  }
 
-  if ((millis() - time_1) > 1000)
-  {
-    time_1 = millis();
+    if ((millis() - time_1) > 1000)
+    {
+      time_1 = millis();
 
-    if (PumpDelay_Off)
-      PumpDelay_Off--;
+      if (PumpDelay_Off)
+        PumpDelay_Off--;
 #ifdef __AVR_ATmega328PB__
-    if (digitalRead(WL))
+      if (digitalRead(WL))
 #endif
-#ifdef STM32F10X_MD
-      if (HAL_GPIO_ReadPin(LEVEL_SENS_GPIO_Port, LEVEL_SENS_Pin))
+#ifdef STM32F103xB
+        if (HAL_GPIO_ReadPin(LEVEL_SENS_GPIO_Port, LEVEL_SENS_Pin))
 #endif
+        {
+          reserved[0] |= CL_WATER_LEVEL_ERR;
+        }
+        else
+        {
+          reserved[0] &= ~(CL_WATER_LEVEL_ERR);
+        }
+
+#ifdef __AVR_ATmega328PB__
+#ifdef TEST
+      if (1)
       {
-        reserved[0] |= CL_WATER_LEVEL_ERR;
+        PORTB |= (1 << PB5);
+        for (uint8_t i = 0; i < 1; i++)
+        {
+          while (!(UCSR1A & (1 << UDRE1)))
+            ;          // ждем опустошения буфера
+          UDR1 = 0xF5; // отправляем байт
+          // SendArr[i] = 0;    // сразу же чистим переменную
+        }
+        while (!(UCSR1A & (1 << UDRE1)))
+          ; // ждем опустошения буфера
+        for (int i = 0; i < 1000; i++)
+        {
+          asm("NOP");
+        }
+        PORTB &= ~(1 << PB5);
+      }
+#endif
+
+      Wire.beginTransmission(0x27);
+      if (Wire.endTransmission() == 0)
+      {
+        if (!Display_conn)
+        {
+          wdt_reset();
+          lcd.init();
+          wdt_reset();
+          Display_conn = true;
+        }
       }
       else
-      {
-        reserved[0] &= ~(CL_WATER_LEVEL_ERR);
-      }
-
-#ifdef __AVR_ATmega328PB__
-    Wire.beginTransmission(0x27);
-    if (Wire.endTransmission() == 0)
-    {
-      if (!Display_conn)
-      {
-        wdt_reset();
-        lcd.init();
-        wdt_reset();
-        Display_conn = true;
-      }
-    }
-    else
-      Display_conn = false;
+        Display_conn = false;
 #endif
-#ifdef STM32F10X_MD
-    if (HAL_I2C_IsDeviceReady(&hi2c1, (0x27 << 1), 1, 10) == HAL_OK)
-    {
-      if (!Display_conn)
+#ifdef STM32F103xB
+      if (HAL_I2C_IsDeviceReady(&hi2c1, (0x27 << 1), 1, 10) == HAL_OK)
       {
-        HAL_IWDG_Refresh(&hiwdg);
-        Serial.println("conn");
-        HAL_IWDG_Refresh(&hiwdg);
-        lcd.init();
-        HAL_IWDG_Refresh(&hiwdg);
-        Display_conn = true;
+        if (!Display_conn)
+        {
+          HAL_IWDG_Refresh(&hiwdg);
+          Serial.println("conn");
+          HAL_IWDG_Refresh(&hiwdg);
+          lcd.init();
+          HAL_IWDG_Refresh(&hiwdg);
+          Display_conn = true;
+        }
       }
-    }
-    else
-      Display_conn = false;
+      else
+        Display_conn = false;
 
 #endif
 
 #ifdef FanProtec
-    if (Fan1_Off >= 20 || Fan2_Off >= 20 || Fan3_Off >= 20)
-    {
-      Fan = true;
-      Chiler_On = false;
-    }
-    else
-    {
-      Fan = false;
-    }
+      if (Fan1_Off >= 20 || Fan2_Off >= 20 || Fan3_Off >= 20)
+      {
+        Fan = true;
+        Chiler_On = false;
+      }
+      else
+      {
+        Fan = false;
+      }
 #endif
 
-    if (((millis() - Comm_timeout) > 3000) && (TestStart == false))
-    {
-      reserved[0] |= COOLING_COMM_FAULT;
-      Chiler_On = false;
-    }
-    else
-      reserved[0] &= ~(COOLING_COMM_FAULT);
-
-    if ((reserved[0] || LowPressure || CriticalPressure || Freez_Temp || Fan) && Chiller_Switch)
-    {
-
-      if (Display_conn)
+      if (((millis() - Comm_timeout) > 3000) && (TestStart == false))
       {
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Error:");
-        lcd.setCursor(0, 1);
+        reserved[0] |= COOLING_COMM_FAULT;
+        Chiler_On = false;
       }
-
-      String Error;
-      if (Freez_Temp)
-        Error = "Fan";
-      else if (Freez_Temp)
-        Error = "Freez Temp";
-      else if (CriticalPressure)
-        Error = "Critical Pressure";
-      else if (reserved[0] & CL_WATER_LEVEL_ERR)
-        Error = "Water level";
-      else if (reserved[0] & CL_WATER_OVERHEAT)
-        Error = "Water overheat";
-      else if (reserved[0] & CL_LAB_OVERHEAT)
-        Error = "Air overheat";
-      else if (reserved[0] & CL_FLOW_LOW)
-        Error = "Flow low";
-      else if (LowPressure)
-        Error = "Low Pressure";
-      else if (reserved[0] & COOLING_COMM_FAULT)
-        Error = "Comm fault";
-      else if (reserved[0] & CL_WATER_HEATING)
-        Error = "ON";
-      else if (reserved[0] & CL_WATER_OFF)
-        Error = "OFF";
       else
-        Error = "None";
+        reserved[0] &= ~(COOLING_COMM_FAULT);
 
-      // if(Display_conn) lcd.print(Error);
-    }
-    else
-    {
-      if (Display_conn)
+      if ((reserved[0] || LowPressure || CriticalPressure || Freez_Temp || Fan) && Chiller_Switch)
       {
-        lcd.clear();
-        lcd.setCursor(0, 0);
-        lcd.print("Set:");
-        lcd.print(Cansider_Sp / 10.0, 1);
-        lcd.setCursor(10, 0);
-        lcd.print(PressureTransducer / 10);
-        lcd.print("psi");
-        lcd.setCursor(0, 1);
-        lcd.print("                ");
-        lcd.setCursor(0, 1);
-        // lcd.print("T1:");
-        // lcd.print(Cansider_Temp2 / 10.0, 1);
-        // lcd.print("F:");
-        // lcd.print(reserved[1]);
-        // lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
-        // lcd.print(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
-        // lcd.print(" T2:");
-        lcd.print(Fan_Ctrl_Temp / 10.0, 1);
-        // lcd.setCursor(5, 1);
-        // lcd.print(Power_Laser, 0);
-        // lcd.print(" W");
-        // lcd.print(Test_Temp / 10.0, 1);
-        lcd.setCursor(11, 1);
-        lcd.print(100.0 / 450.0 * stepper.getCurrent(), 0);
-        lcd.print("%");
+
+        if (Display_conn)
+        {
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Error:");
+          lcd.setCursor(0, 1);
+        }
+
+        String Error;
+        if (Freez_Temp)
+          Error = "Fan";
+        else if (Freez_Temp)
+          Error = "Freez Temp";
+        else if (CriticalPressure)
+          Error = "Critical Pressure";
+        else if (reserved[0] & CL_WATER_LEVEL_ERR)
+          Error = "Water level";
+        else if (reserved[0] & CL_WATER_OVERHEAT)
+          Error = "Water overheat";
+        else if (reserved[0] & CL_LAB_OVERHEAT)
+          Error = "Air overheat";
+        else if (reserved[0] & CL_FLOW_LOW)
+          Error = "Flow low";
+        else if (LowPressure)
+          Error = "Low Pressure";
+        else if (reserved[0] & COOLING_COMM_FAULT)
+          Error = "Comm fault";
+        else if (reserved[0] & CL_WATER_HEATING)
+          Error = "ON";
+        else if (reserved[0] & CL_WATER_OFF)
+          Error = "OFF";
+        else
+          Error = "None";
+
+        // if(Display_conn) lcd.print(Error);
+      }
+      else
+      {
+        if (Display_conn)
+        {
+          lcd.clear();
+          lcd.setCursor(0, 0);
+          lcd.print("Set:");
+          lcd.print(Cansider_Sp / 10.0, 1);
+          lcd.setCursor(10, 0);
+          lcd.print(PressureTransducer / 10);
+          lcd.print("psi");
+          lcd.setCursor(0, 1);
+          lcd.print("                ");
+          lcd.setCursor(0, 1);
+          // lcd.print("T1:");
+          // lcd.print(Cansider_Temp2 / 10.0, 1);
+          // lcd.print("F:");
+          // lcd.print(reserved[1]);
+          // lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
+          // lcd.print(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
+          // lcd.print(" T2:");
+          lcd.print(Fan_Ctrl_Temp / 10.0, 1);
+          // lcd.setCursor(5, 1);
+          // lcd.print(Power_Laser, 0);
+          // lcd.print(" W");
+          // lcd.print(Test_Temp / 10.0, 1);
+          lcd.setCursor(11, 1);
+          lcd.print(100.0 / 450.0 * stepper.getCurrent(), 0);
+          lcd.print("%");
+        }
       }
     }
-  }
 
-  if ((millis() - time_05) > 500)
-  {
-    time_05 = millis();
+    if ((millis() - time_05) > 500)
+    {
+      time_05 = millis();
 
 // Serial.print(regulator.setpoint);
 // Serial.print(',');
@@ -1821,217 +1841,218 @@ void loop()
 // Serial.print(Press_Temp);
 // Serial.print(',');
 // Serial.println();
-#ifdef STM32F10X_MD
-    ADC_ChannelConfTypeDef sConfig;
+#ifdef STM32F103xB
+      ADC_ChannelConfTypeDef sConfig;
 
-    sConfig.Channel = ADC_CHANNEL_VREFINT;
-    sConfig.Rank = ADC_REGULAR_RANK_1;
-    sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
-    if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-    {
-      Error_Handler();
-    }
-    HAL_ADC_Start(&hadc1);
-    HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
-    adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
-    HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
-    Serial.println(3.290 / 4095.0 * adc, 3);
-    Serial.println(ADC_REF / adc * 4095.0, 3);
-    HAL_StatusTypeDef ret;
-    for (int i = 1; i < 128; i++)
-    {
-      HAL_IWDG_Refresh(&hiwdg);
-      ret = HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(i << 1), 4, 100);
-      if (ret == HAL_OK)
+      sConfig.Channel = ADC_CHANNEL_VREFINT;
+      sConfig.Rank = ADC_REGULAR_RANK_1;
+      sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+      if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
       {
-        Serial.print("dev_addr: ");
-        Serial.println(i, HEX);
+        Error_Handler();
       }
-      else if (ret != HAL_OK)
+      HAL_ADC_Start(&hadc1);
+      HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
+      adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
+      HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
+      Serial.println(3.290 / 4095.0 * adc, 3);
+      Serial.println(ADC_REF / adc * 4095.0, 3);
+      // HAL_StatusTypeDef ret;
+      // for (int i = 1; i < 128; i++)
+      // {
+      //   HAL_IWDG_Refresh(&hiwdg);
+      //   ret = HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(i << 1), 4, 100);
+      //   if (ret == HAL_OK)
+      //   {
+      //     Serial.print("dev_addr: ");
+      //     Serial.println(i, HEX);
+      //   }
+      //   else if (ret != HAL_OK)
+      //   {
+      //     Serial.print("-- ");
+      //   }
+      // }
+      // Serial.println();
+#endif
+
+      if (Chiler_On)
       {
-        Serial.print("-- ");
-      }
-    }
-    Serial.println();
-#endif
-
-    if (Chiler_On)
-    {
-#ifdef STM32F10X_MD
-      HAL_GPIO_WritePin(PUMP_GPIO_Port, PUMP_Pin, GPIO_PIN_RESET);
+#ifdef STM32F103xB
+        HAL_GPIO_WritePin(PUMP_GPIO_Port, PUMP_Pin, GPIO_PIN_RESET);
 #else
-      digitalWrite(PUMP, HIGH);
+        digitalWrite(PUMP, HIGH);
 #endif
-      if (reserved[1] > 35)
-      {
-        Chiller_Switch = true;
-#ifdef STM32F10X_MD
-        HAL_GPIO_WritePin(RELAY_GPIO_Port, RELAY_Pin, GPIO_PIN_RESET);
+        if (reserved[1] > 35)
+        {
+          Chiller_Switch = true;
+#ifdef STM32F103xB
+          HAL_GPIO_WritePin(RELAY_GPIO_Port, RELAY_Pin, GPIO_PIN_RESET);
 #else
-        digitalWrite(Compressor, HIGH);
+          digitalWrite(Compressor, HIGH);
 #endif
-        reserved[0] &= ~(CL_WATER_OFF);
-      }
-    }
-    else
-    {
-#ifdef __AVR_ATmega328PB__
-      PCICR &= ~(1 << PCIE0); // прерывания выкл для FS
-#endif
-#ifdef STM32F10X_MD
-      HAL_NVIC_DisableIRQ(EXTI15_10_IRQn);
-#endif
-      reserved[1] = 0;
-#ifdef STM32F10X_MD
-      HAL_GPIO_WritePin(RELAY_GPIO_Port, RELAY_Pin, GPIO_PIN_SET);
-#else
-      digitalWrite(Compressor, LOW);
-#endif
-      if (PumpDelay_Off == 0)
-#ifdef STM32F10X_MD
-        HAL_GPIO_WritePin(PUMP_GPIO_Port, PUMP_Pin, GPIO_PIN_SET);
-#else
-        digitalWrite(PUMP, LOW);
-#endif
-      reserved[0] |= CL_WATER_OFF;
-    }
-
-    readTemp();
-    Control_Values();
-    Control_Fan();
-
-    if (CriticalPressure)
-    {
-      Chiler_On = false;
-    }
-
-    if (reserved[0] & CL_FLOW_LOW)
-    {
-      Chiler_On = false;
-    }
-  }
-
-  if ((millis() - time_01) > 100)
-  {
-    time_01 = millis();
-
-    Check_Pressure();
-    Press_Temp = Lookup();
-
-    regulator.input = float(PressureTransducer);
-#ifdef __AVR_ATmega328PB__
-    if (digitalRead(Valve_1_Hot))
-#endif
-#ifdef STM32F10X_MD
-      if (!HAL_GPIO_ReadPin(VALVE_1_GPIO_Port, VALVE_1_Pin))
-#endif
-      {
-        stepper.setTarget(200); // в шагах
+          reserved[0] &= ~(CL_WATER_OFF);
+        }
       }
       else
       {
-        stepper.setTarget(pos);
-      }
-
-    if (Chiler_On)
-    {
-      Chiller_Protec();
-
-      if (Cansider_Temp < (Cansider_Sp - 10))
-      {
-#ifdef STM32F10X_MD
-        HAL_GPIO_WritePin(VALVE_1_GPIO_Port, VALVE_1_Pin, GPIO_PIN_RESET);
-#else
-        digitalWrite(Valve_1_Hot, HIGH);
+#ifdef __AVR_ATmega328PB__
+        PCICR &= ~(1 << PCIE0); // прерывания выкл для FS
 #endif
+#ifdef STM32F103xB
+        HAL_NVIC_DisableIRQ(EXTI15_10_IRQn);
+#endif
+        reserved[1] = 0;
+#ifdef STM32F103xB
+        HAL_GPIO_WritePin(RELAY_GPIO_Port, RELAY_Pin, GPIO_PIN_SET);
+#else
+        digitalWrite(Compressor, LOW);
+#endif
+        if (PumpDelay_Off == 0)
+#ifdef STM32F103xB
+          HAL_GPIO_WritePin(PUMP_GPIO_Port, PUMP_Pin, GPIO_PIN_SET);
+#else
+          digitalWrite(PUMP, LOW);
+#endif
+        reserved[0] |= CL_WATER_OFF;
       }
+
+      readTemp();
+      Control_Values();
+      Control_Fan();
+
+      if (CriticalPressure)
+      {
+        Chiler_On = false;
+      }
+
+      if (reserved[0] & CL_FLOW_LOW)
+      {
+        Chiler_On = false;
+      }
+    }
+
+    if ((millis() - time_01) > 100)
+    {
+      time_01 = millis();
+
+      Check_Pressure();
+      Press_Temp = Lookup();
+
+      regulator.input = float(PressureTransducer);
+#ifdef __AVR_ATmega328PB__
+      if (digitalRead(Valve_1_Hot))
+#endif
+#ifdef STM32F103xB
+        if (!HAL_GPIO_ReadPin(VALVE_1_GPIO_Port, VALVE_1_Pin))
+#endif
+        {
+          stepper.setTarget(200); // в шагах
+        }
+        else
+        {
+          stepper.setTarget(pos);
+        }
+
+      if (Chiler_On)
+      {
+        Chiller_Protec();
+
+        if (Cansider_Temp < (Cansider_Sp - 10))
+        {
+#ifdef STM32F103xB
+          HAL_GPIO_WritePin(VALVE_1_GPIO_Port, VALVE_1_Pin, GPIO_PIN_RESET);
+#else
+          digitalWrite(Valve_1_Hot, HIGH);
+#endif
+        }
 #ifdef __AVR_ATmega328PB__
 #ifdef FanProtec
-      if ((1 << PD3) & PIND)
-      {
-        if ((1 << PD7) & PIND)
+        if ((1 << PD3) & PIND)
         {
-          Fan1_Off++;
+          if ((1 << PD7) & PIND)
+          {
+            Fan1_Off++;
+          }
+          else
+          {
+            Fan1_Off = 0;
+          }
+          if ((1 << PB0) & PINB)
+          {
+            Fan2_Off++;
+          }
+          else
+          {
+            Fan2_Off = 0;
+          }
+          if ((1 << PB1) & PINB)
+          {
+            Fan3_Off++;
+          }
+          else
+          {
+            Fan3_Off = 0;
+          }
         }
-        else
-        {
-          Fan1_Off = 0;
-        }
-        if ((1 << PB0) & PINB)
-        {
-          Fan2_Off++;
-        }
-        else
-        {
-          Fan2_Off = 0;
-        }
-        if ((1 << PB1) & PINB)
-        {
-          Fan3_Off++;
-        }
-        else
-        {
-          Fan3_Off = 0;
-        }
+#endif
+#endif
       }
-#endif
-#endif
     }
-  }
 
-  enc.tick(); // опрос происходит здесь
+    enc.tick(); // опрос происходит здесь
 
-  if (enc.click())
-  {
-    Chiller_Switch = false;
-    if (Display_conn)
-      lcd.clear();
-  }
-
-  if (enc.step(1))
-  {
-    Cansider_Sp += step_a;
-    if (Cansider_Sp < 50 || Cansider_Sp > 350)
-      Cansider_Sp -= step_a;
-    if (Display_conn)
+    if (enc.click())
     {
-      lcd.setCursor(0, 0);
-      lcd.print("                ");
-      lcd.setCursor(0, 0);
-      lcd.print("Set:");
-      // lcd.print(Cansider_Sp / 10.0, 1);
+      Chiller_Switch = false;
+      if (Display_conn)
+        lcd.clear();
     }
-  }
-  // разворачиваем шаг для изменения в обратную сторону
-  // передаём количество предварительных кликов
-  if (enc.releaseStep(1))
-  {
-    step_a = -step_a;
+
+    if (enc.step(1))
+    {
+      Cansider_Sp += step_a;
+      if (Cansider_Sp < 50 || Cansider_Sp > 350)
+        Cansider_Sp -= step_a;
+      if (Display_conn)
+      {
+        lcd.setCursor(0, 0);
+        lcd.print("                ");
+        lcd.setCursor(0, 0);
+        lcd.print("Set:");
+        // lcd.print(Cansider_Sp / 10.0, 1);
+      }
+    }
+    // разворачиваем шаг для изменения в обратную сторону
+    // передаём количество предварительных кликов
+    if (enc.releaseStep(1))
+    {
+      step_a = -step_a;
 #ifdef __AVR_ATmega328PB__
-    if (EEPROM.read(0) != Cansider_Sp)
-      EEPROM.write(0, Cansider_Sp);
+      if (EEPROM.read(0) != Cansider_Sp)
+        EEPROM.write(0, Cansider_Sp);
 #endif
-  }
-
-  if (enc.held(0))
-  {
-    if (Chiler_On)
-    {
-      Chiler_On = false;
-      PumpDelay_Off = Pump_Off;
     }
-    else
+
+    if (enc.held(0))
     {
-      TestStart = true;
-      Chiler_On = true;
+      if (Chiler_On)
+      {
+        Chiler_On = false;
+        PumpDelay_Off = Pump_Off;
+      }
+      else
+      {
+        TestStart = true;
+        Chiler_On = true;
 #ifdef __AVR_ATmega328PB__
-      PCICR |= (1 << PCIE0); // прерывания для FS
+        PCICR |= (1 << PCIE0); // прерывания для FS
 #endif
-#ifdef STM32F10X_MD
-      HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+#ifdef STM32F103xB
+        HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 #endif
-      varTime = millis(); // Сбрасываем счётчик и сохраняем время расчёта
-      LowPressure = false;
+        varTime = millis(); // Сбрасываем счётчик и сохраняем время расчёта
+        LowPressure = false;
+      }
     }
   }
 }
