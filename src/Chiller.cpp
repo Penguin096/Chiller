@@ -1,4 +1,3 @@
-#include <Wire.h>
 #include "EncButton2.h"
 #include "microDS18B20.h"
 #include "GyverStepper.h"
@@ -8,6 +7,7 @@
 
 #include <Arduino.h>
 #include <avr/wdt.h>
+#include <Wire.h>
 #include <EEPROM.h>
 #include "LiquidCrystal_I2C.h"
 
@@ -58,7 +58,7 @@
 
 #include "HD44780_LiquidCrystal_I2C.h"
 
-#define ADC_REF 1.208
+#define ADC_REF 1.209
 #define RXBUFFERSIZE 15
 
 #define Button PC13
@@ -73,6 +73,7 @@
 #define PIN_STEP PB10
 #define PIN_DIR PB11
 #define DS_PIN PA2 // пин для термометров
+#define EN_PIN PB1
 
 #endif
 
@@ -110,7 +111,12 @@ HD44780_LiquidCrystal_I2C lcd(0x27, 16, 2); // set the LCD address to 0x27 for a
 #endif
 
 EncButton2<EB_BTN> enc(INPUT_PULLUP, Button);
+#ifdef __AVR_ATmega328PB__
 GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR);
+#endif
+#ifdef STM32F10X_MD
+GStepper<STEPPER2WIRE> stepper(500, PIN_STEP, PIN_DIR, EN_PIN);
+#endif
 GyverPID regulator(9.0, 1.0, 0.01); // можно П, И, Д, без dt, dt будет по умолч. 100 мс
 
 byte fanThermometer[] = {0x28, 0x99, 0x1D, 0xFB, 0x0C, 0x00, 0x00, 0xF7};
@@ -138,6 +144,7 @@ bool CriticalPressure;
 bool Freez_Temp;
 bool Fan;
 bool TestStart;
+bool Display_conn;
 
 uint16_t PressureTransducer;
 uint16_t Cansider_Temp;
@@ -934,14 +941,21 @@ void setup()
   USART1_Init();
 #endif
 
-  // Serial.begin(9600);
+// Serial.begin(9600);
+#ifdef STM32F10X_MD
+  if (HAL_I2C_IsDeviceReady(&hi2c1, (0x27 << 1), 1, 10) == HAL_OK)
+  {
+#endif
+    lcd.init(); // initialize the lcd
 
-  lcd.init(); // initialize the lcd
-
-  // Print a message to the LCD.
-  lcd.backlight();
-  lcd.setCursor(0, 0);
-  lcd.print("OrchiChiller v3");
+    // Print a message to the LCD.
+    lcd.backlight();
+    lcd.setCursor(0, 0);
+    lcd.print("OrchiChiller v3");
+    Display_conn = true;
+#ifdef STM32F10X_MD
+  }
+#endif
 
 #ifdef __AVR_ATmega328PB__
   // Cansider_Sp = EEPROM.read(0) ? EEPROM.read(0) : 100;
@@ -988,7 +1002,8 @@ void setup()
   HAL_IWDG_Refresh(&hiwdg);
 #endif
 
-  lcd.clear();
+  if (Display_conn)
+    lcd.clear();
 
   // #ifdef __AVR_ATmega328PB__ // Тест выравнивание темп
   //   for (uint8_t i = 0; i < (1ul << (2 << 1)); i++)
@@ -1670,12 +1685,35 @@ void loop()
 
 #ifdef __AVR_ATmega328PB__
     Wire.beginTransmission(0x27);
-    if (Wire.endTransmission())
-      lcd.init();
+    if (Wire.endTransmission() == 0)
+    {
+      if (!Display_conn)
+      {
+        wdt_reset();
+        lcd.init();
+        wdt_reset();
+        Display_conn = true;
+      }
+    }
+    else
+      Display_conn = false;
 #endif
 #ifdef STM32F10X_MD
-    if (HAL_I2C_IsDeviceReady(&hi2c1, (0x27 << 1), 1, 10))
-      lcd.init();
+    if (HAL_I2C_IsDeviceReady(&hi2c1, (0x27 << 1), 1, 10) == HAL_OK)
+    {
+      if (!Display_conn)
+      {
+        HAL_IWDG_Refresh(&hiwdg);
+        Serial.println("conn");
+        HAL_IWDG_Refresh(&hiwdg);
+        lcd.init();
+        HAL_IWDG_Refresh(&hiwdg);
+        Display_conn = true;
+      }
+    }
+    else
+      Display_conn = false;
+
 #endif
 
 #ifdef FanProtec
@@ -1701,10 +1739,13 @@ void loop()
     if ((reserved[0] || LowPressure || CriticalPressure || Freez_Temp || Fan) && Chiller_Switch)
     {
 
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("Error:");
-      lcd.setCursor(0, 1);
+      if (Display_conn)
+      {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Error:");
+        lcd.setCursor(0, 1);
+      }
 
       String Error;
       if (Freez_Temp)
@@ -1732,35 +1773,38 @@ void loop()
       else
         Error = "None";
 
-      // lcd.print(Error);
+      // if(Display_conn) lcd.print(Error);
     }
     else
     {
-      lcd.clear();
-      lcd.setCursor(0, 0);
-      lcd.print("Set:");
-      lcd.print(Cansider_Sp / 10.0, 1);
-      lcd.setCursor(10, 0);
-      lcd.print(PressureTransducer / 10);
-      lcd.print("psi");
-      lcd.setCursor(0, 1);
-      lcd.print("                ");
-      lcd.setCursor(0, 1);
-      // lcd.print("T1:");
-      // lcd.print(Cansider_Temp2 / 10.0, 1);
-      // lcd.print("F:");
-      // lcd.print(reserved[1]);
-      // lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
-      // lcd.print(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
-      // lcd.print(" T2:");
-      lcd.print(Fan_Ctrl_Temp / 10.0, 1);
-      // lcd.setCursor(5, 1);
-      // lcd.print(Power_Laser, 0);
-      // lcd.print(" W");
-      // lcd.print(Test_Temp / 10.0, 1);
-      lcd.setCursor(11, 1);
-      lcd.print(100.0 / 450.0 * stepper.getCurrent(), 0);
-      lcd.print("%");
+      if (Display_conn)
+      {
+        lcd.clear();
+        lcd.setCursor(0, 0);
+        lcd.print("Set:");
+        lcd.print(Cansider_Sp / 10.0, 1);
+        lcd.setCursor(10, 0);
+        lcd.print(PressureTransducer / 10);
+        lcd.print("psi");
+        lcd.setCursor(0, 1);
+        lcd.print("                ");
+        lcd.setCursor(0, 1);
+        // lcd.print("T1:");
+        // lcd.print(Cansider_Temp2 / 10.0, 1);
+        // lcd.print("F:");
+        // lcd.print(reserved[1]);
+        // lcd.print((Test_Temp - Press_Temp) / 10.0, 1);
+        // lcd.print(((reserved[1] / (7.5 * 0.0000167)) * 4200.0 * 1000.0 * ((Cansider_Temp2 / 10.0) - (Cansider_Temp / 10.0))) / 10.0, 1);
+        // lcd.print(" T2:");
+        lcd.print(Fan_Ctrl_Temp / 10.0, 1);
+        // lcd.setCursor(5, 1);
+        // lcd.print(Power_Laser, 0);
+        // lcd.print(" W");
+        // lcd.print(Test_Temp / 10.0, 1);
+        lcd.setCursor(11, 1);
+        lcd.print(100.0 / 450.0 * stepper.getCurrent(), 0);
+        lcd.print("%");
+      }
     }
   }
 
@@ -1793,6 +1837,22 @@ void loop()
     HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
     Serial.println(3.290 / 4095.0 * adc, 3);
     Serial.println(ADC_REF / adc * 4095.0, 3);
+    HAL_StatusTypeDef ret;
+    for (int i = 1; i < 128; i++)
+    {
+      HAL_IWDG_Refresh(&hiwdg);
+      ret = HAL_I2C_IsDeviceReady(&hi2c1, (uint16_t)(i << 1), 4, 100);
+      if (ret == HAL_OK)
+      {
+        Serial.print("dev_addr: ");
+        Serial.println(i, HEX);
+      }
+      else if (ret != HAL_OK)
+      {
+        Serial.print("-- ");
+      }
+    }
+    Serial.println();
 #endif
 
     if (Chiler_On)
@@ -1924,7 +1984,8 @@ void loop()
   if (enc.click())
   {
     Chiller_Switch = false;
-    lcd.clear();
+    if (Display_conn)
+      lcd.clear();
   }
 
   if (enc.step(1))
@@ -1932,11 +1993,14 @@ void loop()
     Cansider_Sp += step_a;
     if (Cansider_Sp < 50 || Cansider_Sp > 350)
       Cansider_Sp -= step_a;
-    lcd.setCursor(0, 0);
-    lcd.print("                ");
-    lcd.setCursor(0, 0);
-    lcd.print("Set:");
-    // lcd.print(Cansider_Sp / 10.0, 1);
+    if (Display_conn)
+    {
+      lcd.setCursor(0, 0);
+      lcd.print("                ");
+      lcd.setCursor(0, 0);
+      lcd.print("Set:");
+      // lcd.print(Cansider_Sp / 10.0, 1);
+    }
   }
   // разворачиваем шаг для изменения в обратную сторону
   // передаём количество предварительных кликов
