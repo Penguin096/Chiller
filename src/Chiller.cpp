@@ -711,7 +711,7 @@ static void MX_GPIO_Init(void)
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI15_10_IRQn, 0, 0);
-  HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
+  // HAL_NVIC_EnableIRQ(EXTI15_10_IRQn);
 
   /* USER CODE BEGIN MX_GPIO_Init_2 */
   /* USER CODE END MX_GPIO_Init_2 */
@@ -1723,8 +1723,6 @@ int main()
       {
         if (!Display_conn)
         {
-          HAL_IWDG_Refresh(&hiwdg);
-          Serial.println("conn");
           HAL_IWDG_Refresh(&hiwdg);
           lcd.init();
           HAL_IWDG_Refresh(&hiwdg);
