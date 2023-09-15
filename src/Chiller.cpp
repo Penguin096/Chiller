@@ -47,10 +47,9 @@
 
 #endif
 #ifdef STM32F103xB
-
 #include <Arduino.h>
-
 #include "../CubeMX/Inc/main.h"
+#include "../CubeMX/Inc/stm32f1xx_it.h"
 // #include "usb_device.h"
 //  #include "stm32f1xx_hal.h"
 //  #include "stm32f1xx_hal_adc.h"
@@ -60,6 +59,7 @@
 
 #define ADC_REF 1.209
 #define RXBUFFERSIZE 15
+uint8_t recvd_data; // receive buffer
 
 #define Button PC13
 #define FAN PB6
@@ -221,54 +221,6 @@ void USART1_Init()
 }
 #endif
 #ifdef STM32F103xB
-void SysTick_Handler(void)
-{
-  HAL_IncTick();
-}
-
-void NMI_Handler(void)
-{
-}
-
-void HardFault_Handler(void)
-{
-  while (1)
-  {
-  }
-}
-
-void MemManage_Handler(void)
-{
-  while (1)
-  {
-  }
-}
-
-void BusFault_Handler(void)
-{
-  while (1)
-  {
-  }
-}
-
-void UsageFault_Handler(void)
-{
-  while (1)
-  {
-  }
-}
-
-void SVC_Handler(void)
-{
-}
-
-void DebugMon_Handler(void)
-{
-}
-
-void PendSV_Handler(void)
-{
-}
 
 /* Private variables ---------------------------------------------------------*/
 ADC_HandleTypeDef hadc1;
@@ -279,10 +231,17 @@ IWDG_HandleTypeDef hiwdg;
 
 UART_HandleTypeDef huart1;
 
-// PCD_HandleTypeDef hpcd_USB_FS;
+/* USER CODE BEGIN PV */
 
-/* Buffer used for reception */
-uint8_t aRxBuffer[RXBUFFERSIZE];
+/* USER CODE END PV */
+
+/* Private function prototypes -----------------------------------------------*/
+void SystemClock_Config(void);
+static void MX_GPIO_Init(void);
+static void MX_IWDG_Init(void);
+static void MX_ADC1_Init(void);
+static void MX_I2C1_Init(void);
+static void MX_USART1_UART_Init(void);
 
 /**
  * @brief System Clock Configuration
@@ -377,62 +336,6 @@ static void MX_ADC1_Init(void)
   /* USER CODE END ADC1_Init 2 */
 }
 
-/**
- * @brief ADC MSP Initialization
- * This function configures the hardware resources used in this example
- * @param hadc: ADC handle pointer
- * @retval None
- */
-void HAL_ADC_MspInit(ADC_HandleTypeDef *hadc)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  if (hadc->Instance == ADC1)
-  {
-    /* USER CODE BEGIN ADC1_MspInit 0 */
-
-    /* USER CODE END ADC1_MspInit 0 */
-    /* Peripheral clock enable */
-    __HAL_RCC_ADC1_CLK_ENABLE();
-
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    /**ADC1 GPIO Configuration
-    PA0-WKUP     ------> ADC1_IN0
-    PA1     ------> ADC1_IN1
-    PA2     ------> ADC1_IN2
-    PA3     ------> ADC1_IN3
-    */
-    GPIO_InitStruct.Pin = P_SENSE_Pin | T_SENS_Pin | C_SENS_Pin | R_SENS_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_ANALOG;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    /* USER CODE BEGIN ADC1_MspInit 1 */
-
-    /* USER CODE END ADC1_MspInit 1 */
-  }
-}
-
-/**
- * Initializes the Global MSP.
- */
-void HAL_MspInit(void)
-{
-  /* USER CODE BEGIN MspInit 0 */
-
-  /* USER CODE END MspInit 0 */
-
-  __HAL_RCC_AFIO_CLK_ENABLE();
-  __HAL_RCC_PWR_CLK_ENABLE();
-
-  /* System interrupt init*/
-
-  /** NOJTAG: JTAG-DP Disabled and SW-DP Enabled
-  */
-  __HAL_AFIO_REMAP_SWJ_NOJTAG();
-
-  /* USER CODE BEGIN MspInit 1 */
-
-  /* USER CODE END MspInit 1 */
-}
 
 /**
  * @brief I2C1 Initialization Function
@@ -468,41 +371,6 @@ static void MX_I2C1_Init(void)
 }
 
 /**
- * @brief I2C MSP Initialization
- * This function configures the hardware resources used in this example
- * @param hi2c: I2C handle pointer
- * @retval None
- */
-void HAL_I2C_MspInit(I2C_HandleTypeDef *hi2c)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  if (hi2c->Instance == I2C1)
-  {
-    /* USER CODE BEGIN I2C1_MspInit 0 */
-
-    /* USER CODE END I2C1_MspInit 0 */
-
-    __HAL_RCC_GPIOB_CLK_ENABLE();
-    /**I2C1 GPIO Configuration
-    PB8     ------> I2C1_SCL
-    PB9     ------> I2C1_SDA
-    */
-    GPIO_InitStruct.Pin = SCL_Pin | SDA_Pin;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
-
-    __HAL_AFIO_REMAP_I2C1_ENABLE();
-
-    /* Peripheral clock enable */
-    __HAL_RCC_I2C1_CLK_ENABLE();
-    /* USER CODE BEGIN I2C1_MspInit 1 */
-
-    /* USER CODE END I2C1_MspInit 1 */
-  }
-}
-
-/**
  * @brief IWDG Initialization Function
  * @param None
  * @retval None
@@ -518,7 +386,7 @@ static void MX_IWDG_Init(void)
 
   /* USER CODE END IWDG_Init 1 */
   hiwdg.Instance = IWDG;
-  hiwdg.Init.Prescaler = IWDG_PRESCALER_32;
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_64;//32
   hiwdg.Init.Reload = 2500;
   if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
   {
@@ -557,53 +425,8 @@ static void MX_USART1_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART1_Init 2 */
-  /*##-4- Put UART peripheral in reception process ###########################*/
-  if (HAL_UART_Receive_IT(&huart1, (uint8_t *)aRxBuffer, RXBUFFERSIZE) != HAL_OK)
-  {
-    Error_Handler();
-  }
+
   /* USER CODE END USART1_Init 2 */
-}
-
-/**
- * @brief UART MSP Initialization
- * This function configures the hardware resources used in this example
- * @param huart: UART handle pointer
- * @retval None
- */
-void HAL_UART_MspInit(UART_HandleTypeDef *huart)
-{
-  GPIO_InitTypeDef GPIO_InitStruct = {0};
-  if (huart->Instance == USART1)
-  {
-    /* USER CODE BEGIN USART1_MspInit 0 */
-
-    /* USER CODE END USART1_MspInit 0 */
-    /* Peripheral clock enable */
-    __HAL_RCC_USART1_CLK_ENABLE();
-
-    __HAL_RCC_GPIOA_CLK_ENABLE();
-    /**USART1 GPIO Configuration
-    PA9     ------> USART1_TX
-    PA10     ------> USART1_RX
-    */
-    GPIO_InitStruct.Pin = GPIO_PIN_9;
-    GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
-    GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    GPIO_InitStruct.Pin = GPIO_PIN_10;
-    GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-    GPIO_InitStruct.Pull = GPIO_NOPULL;
-    HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
-
-    /* USART1 interrupt Init */
-    HAL_NVIC_SetPriority(USART1_IRQn, 0, 0);
-    HAL_NVIC_EnableIRQ(USART1_IRQn);
-    /* USER CODE BEGIN USART1_MspInit 1 */
-
-    /* USER CODE END USART1_MspInit 1 */
-  }
 }
 
 // /**
@@ -720,8 +543,11 @@ static void MX_GPIO_Init(void)
 /**
  * @brief This function handles USART1 global interrupt.
  */
-void USART1_IRQHandler(void)
+void HAL_UART_IRQHandler(UART_HandleTypeDef * huart)
 {
+
+    Serial.println(recvd_data, HEX);
+
 
   static uint8_t CountArr;     // счетчик принятых байтов
   static uint8_t IncomArr[14]; // входящий массив
@@ -730,109 +556,94 @@ void USART1_IRQHandler(void)
   bool send;
   if ((USART1->SR & USART_SR_RXNE) != 0)
   {
-    Serial.println(USART1->DR);
-    // IncomArr[CountArr] = USART1->DR; // принимаем байт в массив
-    // if (IncomArr[0] == BUS_RET_COMMAND_HEAD && ReadOk == false)
-    // {
-    //   CountArr++;
-    //   if (CountArr == sizeof(IncomArr))
-    //   { // если приняли все байты
-    //     CountArr = 0;
-    //     if ((IncomArr[1] == default_ID_COOLING) && (IncomArr[11] == tail) && (IncomArr[12] == tail) && (IncomArr[13] == tail))
-    //       ReadOk = true;
+    IncomArr[CountArr] = USART1->DR; // принимаем байт в массив
+    if (IncomArr[0] == BUS_RET_COMMAND_HEAD && ReadOk == false)
+    {
+      CountArr++;
+      if (CountArr == sizeof(IncomArr))
+      { // если приняли все байты
+        CountArr = 0;
+        if ((IncomArr[1] == default_ID_COOLING) && (IncomArr[11] == tail) && (IncomArr[12] == tail) && (IncomArr[13] == tail))
+          ReadOk = true;
 
-    //     if (ReadOk)
-    //     {
-    //       Comm_timeout = millis();
+        if (ReadOk)
+        {
+          Comm_timeout = millis();
 
-    //       SendArr[0] = BUS_RET_COMMAND_HEAD;
-    //       SendArr[1] = default_ID_COOLING;
-    //       SendArr[2] = IncomArr[2];
-    //       switch (IncomArr[2])
-    //       {
-    //       case WATER_ON:
-    //         SendArr[5] = Chiler_On;
-    //         send = true;
-    //         if (!Chiler_On)
-    //         {
-    //           Chiler_On = true;
-    //           HAL_NVIC_EnableIRQ(EXTI15_10_IRQn); // прерывания для FS
-    //           varTime = millis();                 // Сбрасываем счётчик и сохраняем время расчёта
-    //           LowPressure = false;
-    //         }
-    //         break;
-    //       case WATER_OFF:
-    //         Chiler_On = false;
-    //         PumpDelay_Off = Pump_Off;
-    //         break;
-    //       case CL_SET_TEMP:
-    //         // Cansider_Sp = (IncomArr[4] << 8) | IncomArr[3];
-    //         break;
-    //       case CL_GET_SET_TEMP:
-    //         SendArr[5] = Cansider_Sp & 0xff;
-    //         SendArr[6] = Cansider_Sp >> 8;
-    //         send = true;
-    //         break;
-    //       case CL_GET_STATUS:
-    //         SendArr[3] = Fan_Ctrl_Temp & 0xff;
-    //         SendArr[4] = Fan_Ctrl_Temp >> 8;
-    //         SendArr[5] = Cansider_Temp & 0xff;
-    //         SendArr[6] = Cansider_Temp >> 8;
-    //         SendArr[7] = reserved[0];
-    //         SendArr[8] = (reserved[1] > 30) ? reserved[1] : 30;
-    //         SendArr[9] = reserved[2];
-    //         SendArr[10] = reserved[3];
-    //         send = true;
-    //         break;
-    //       case CL_PUMP_START:
-    //         Power_Laser = pow((short)((IncomArr[4] << 8) | IncomArr[3]), 3) * ((short)((IncomArr[6] << 8) | IncomArr[5])) * 0.000001 * IncomArr[7] / pow(40, 2); // приблизительный расчет мощности лазера
-    //         break;
-    //       case CL_PUMP_STOP:
-    //         send = true;
-    //         break;
-    //       default:
-    //         return;
-    //       }
-    //       SendArr[11] = tail;
-    //       SendArr[12] = tail;
-    //       SendArr[13] = tail;
+          SendArr[0] = BUS_RET_COMMAND_HEAD;
+          SendArr[1] = default_ID_COOLING;
+          SendArr[2] = IncomArr[2];
+          switch (IncomArr[2])
+          {
+          case WATER_ON:
+            SendArr[5] = Chiler_On;
+            send = true;
+            if (!Chiler_On)
+            {
+              Chiler_On = true;
+              HAL_NVIC_EnableIRQ(EXTI15_10_IRQn); // прерывания для FS
+              varTime = millis();                 // Сбрасываем счётчик и сохраняем время расчёта
+              LowPressure = false;
+            }
+            break;
+          case WATER_OFF:
+            Chiler_On = false;
+            PumpDelay_Off = Pump_Off;
+            break;
+          case CL_SET_TEMP:
+            // Cansider_Sp = (IncomArr[4] << 8) | IncomArr[3];
+            break;
+          case CL_GET_SET_TEMP:
+            SendArr[5] = Cansider_Sp & 0xff;
+            SendArr[6] = Cansider_Sp >> 8;
+            send = true;
+            break;
+          case CL_GET_STATUS:
+            SendArr[3] = Fan_Ctrl_Temp & 0xff;
+            SendArr[4] = Fan_Ctrl_Temp >> 8;
+            SendArr[5] = Cansider_Temp & 0xff;
+            SendArr[6] = Cansider_Temp >> 8;
+            SendArr[7] = reserved[0];
+            SendArr[8] = (reserved[1] > 30) ? reserved[1] : 30;
+            SendArr[9] = reserved[2];
+            SendArr[10] = reserved[3];
+            send = true;
+            break;
+          case CL_PUMP_START:
+            Power_Laser = pow((short)((IncomArr[4] << 8) | IncomArr[3]), 3) * ((short)((IncomArr[6] << 8) | IncomArr[5])) * 0.000001 * IncomArr[7] / pow(40, 2); // приблизительный расчет мощности лазера
+            break;
+          case CL_PUMP_STOP:
+            send = true;
+            break;
+          default:
+            return;
+          }
+          SendArr[11] = tail;
+          SendArr[12] = tail;
+          SendArr[13] = tail;
 
-    //       if (send)
-    //       {
-    //         HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_SET);
-    //         for (uint8_t i = 0; i < sizeof(SendArr); i++)
-    //         {
-    //           while ((USART1->SR & USART_SR_TXE) == 0)
-    //             ;                      // ждем опустошения буфера
-    //           USART1->DR = SendArr[i]; // отправляем байт
-    //           // SendArr[i] = 0;    // сразу же чистим переменную
-    //         }
-    //         while ((USART1->SR & USART_SR_TXE) == 0)
-    //           ; // ждем опустошения буфера
-    //         for (int i = 0; i < 1000; i++)
-    //         {
-    //           asm("NOP");
-    //         }
-    //         HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_RESET);
-    //       }
-    //     }
-    //   }
-    // }
+          if (send)
+          {
+            HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_SET);
+            for (uint8_t i = 0; i < sizeof(SendArr); i++)
+            {
+              while ((USART1->SR & USART_SR_TXE) == 0)
+                ;                      // ждем опустошения буфера
+              USART1->DR = SendArr[i]; // отправляем байт
+              // SendArr[i] = 0;    // сразу же чистим переменную
+            }
+            while ((USART1->SR & USART_SR_TXE) == 0)
+              ; // ждем опустошения буфера
+            for (int i = 0; i < 1000; i++)
+            {
+              asm("NOP");
+            }
+            HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_RESET);
+          }
+        }
+      }
+    }
   }
-}
-
-/**
- * @brief This function handles EXTI line[15:10] interrupts.
- */
-void EXTI15_10_IRQHandler(void)
-{
-  /* USER CODE BEGIN EXTI15_10_IRQn 0 */
-
-  /* USER CODE END EXTI15_10_IRQn 0 */
-  HAL_GPIO_EXTI_IRQHandler(FLOW_SENS_Pin);
-  /* USER CODE BEGIN EXTI15_10_IRQn 1 */
-
-  /* USER CODE END EXTI15_10_IRQn 1 */
 }
 
 /**
@@ -1441,7 +1252,7 @@ void readTemp()
 #endif
 }
 
-int main()
+void setup()
 {
 #ifdef __AVR_ATmega328PB__
   wdt_reset();
@@ -1497,13 +1308,9 @@ int main()
   MX_GPIO_Init();
   MX_IWDG_Init();
   MX_ADC1_Init();
-  HAL_ADC_MspInit(&hadc1);
   MX_I2C1_Init();
-  HAL_I2C_MspInit(&hi2c1);
   MX_USART1_UART_Init();
-  HAL_UART_MspInit(&huart1);
   // MX_USB_PCD_Init();
-  HAL_MspInit();
 
   /* Run the ADC calibration */
   if (HAL_ADCEx_Calibration_Start(&hadc1) != HAL_OK)
@@ -2054,3 +1861,5 @@ int main()
     }
   }
 }
+
+void loop() {}
