@@ -48,8 +48,8 @@
 #endif
 #ifdef STM32F103xB
 #include <Arduino.h>
-#include "../CubeMX/Inc/main.h"
-#include "../CubeMX/Inc/stm32f1xx_it.h"
+#include "main.h"
+#include "stm32f1xx_it.h"
 // #include "usb_device.h"
 //  #include "stm32f1xx_hal.h"
 //  #include "stm32f1xx_hal_adc.h"
@@ -58,8 +58,6 @@
 #include "HD44780_LiquidCrystal_I2C.h"
 
 #define ADC_REF 1.209
-#define RXBUFFERSIZE 15
-uint8_t recvd_data; // receive buffer
 
 #define Button PC13
 #define FAN PB6
@@ -336,7 +334,6 @@ static void MX_ADC1_Init(void)
   /* USER CODE END ADC1_Init 2 */
 }
 
-
 /**
  * @brief I2C1 Initialization Function
  * @param None
@@ -386,7 +383,7 @@ static void MX_IWDG_Init(void)
 
   /* USER CODE END IWDG_Init 1 */
   hiwdg.Instance = IWDG;
-  hiwdg.Init.Prescaler = IWDG_PRESCALER_64;//32
+  hiwdg.Init.Prescaler = IWDG_PRESCALER_64; // 32
   hiwdg.Init.Reload = 2500;
   if (HAL_IWDG_Init(&hiwdg) != HAL_OK)
   {
@@ -425,7 +422,7 @@ static void MX_USART1_UART_Init(void)
     Error_Handler();
   }
   /* USER CODE BEGIN USART1_Init 2 */
-
+  __HAL_UART_ENABLE_IT(&huart1, UART_IT_RXNE);
   /* USER CODE END USART1_Init 2 */
 }
 
@@ -543,12 +540,8 @@ static void MX_GPIO_Init(void)
 /**
  * @brief This function handles USART1 global interrupt.
  */
-void HAL_UART_IRQHandler(UART_HandleTypeDef * huart)
+void HAL_UART_IRQHandler(UART_HandleTypeDef *huart)
 {
-
-    Serial.println(recvd_data, HEX);
-
-
   static uint8_t CountArr;     // счетчик принятых байтов
   static uint8_t IncomArr[14]; // входящий массив
   uint8_t SendArr[14];         // исходящий массив
@@ -1862,4 +1855,4 @@ void setup()
   }
 }
 
-void loop() {}
+void loop(void) {}

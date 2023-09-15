@@ -1,4 +1,3 @@
-#ifdef STM32F103xB
 /* USER CODE BEGIN Header */
 /**
   ******************************************************************************
@@ -20,7 +19,7 @@
 /* USER CODE END Header */
 
 /* Includes ------------------------------------------------------------------*/
-#include "../CubeMX/Inc/main.h"
+#include "main.h"
 
 /* USER CODE BEGIN Includes */
 
@@ -291,4 +290,3 @@ void HAL_UART_MspDeInit(UART_HandleTypeDef* huart)
 /* USER CODE BEGIN 1 */
 
 /* USER CODE END 1 */
-#endif
