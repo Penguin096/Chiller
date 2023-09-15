@@ -655,11 +655,10 @@ void HAL_UART_IRQHandler(UART_HandleTypeDef *huart)
             PORTB |= (1 << PB5);
 #endif
 #ifdef STM32F103xB
-            for (uint8_t i = 0; i < sizeof(SendArr); i++)
-            {
-              Serial.print(SendArr[i], HEX);
-            }
-            Serial.println();
+            int32_t start1 = DWT->CYCCNT;
+            int32_t cycles1 = 50 * (SystemCoreClock / 1000000);
+            while ((int32_t)(DWT->CYCCNT) - start1 < cycles1)
+              ;
             HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_SET);
 #endif
             for (uint8_t i = 0; i < sizeof(SendArr); i++)
@@ -674,7 +673,7 @@ void HAL_UART_IRQHandler(UART_HandleTypeDef *huart)
               while ((USART1->SR & USART_SR_TXE) == 0)
                 ;                      // ждем опустошения буфера
               USART1->DR = SendArr[i]; // отправляем байт
-                                       // SendArr[i] = 0;    // сразу же чистим переменную
+              // SendArr[i] = 0;    // сразу же чистим переменную
 #endif
             }
 #ifdef __AVR_ATmega328PB__
