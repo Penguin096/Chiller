@@ -618,29 +618,25 @@ void HAL_UART_IRQHandler(UART_HandleTypeDef *huart)
           if (send)
           {
             HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_SET);
-            int32_t start = DWT->CYCCNT;
-            int32_t cycles = 63 * (SystemCoreClock / 1000000);
-
-              while ((int32_t)(DWT->CYCCNT) - start < cycles)
-                ;
             for (uint8_t i = 0; i < sizeof(SendArr); i++)
             {
-              while ((USART1->SR & USART_SR_TXE) == 0) {}
-                ;                      // ждем опустошения буфера
+              while ((USART1->SR & USART_SR_TXE) == 0)
+              {
+              };                       // ждем опустошения буфера
               USART1->DR = SendArr[i]; // отправляем байт
               // SendArr[i] = 0;    // сразу же чистим переменную
             }
-            while ((USART1->SR & USART_SR_TXE) == 0) {}
-              ; // ждем опустошения буфера
-            // for (int i = 0; i < 1000; i++) //62.5 uS
-            // {
-            //   asm("NOP");
-            // }
-              start = DWT->CYCCNT;
-              cycles = 63 * (SystemCoreClock / 1000000);
-
-              while ((int32_t)(DWT->CYCCNT) - start < cycles)
-                ;
+            while ((USART1->SR & USART_SR_TXE) == 0)
+            {
+            }; // ждем опустошения буфера
+               // for (int i = 0; i < 1000; i++) //62.5 uS
+               // {
+               //   asm("NOP");
+               // }
+            int32_t start = DWT->CYCCNT;
+            int32_t cycles = 50 * (SystemCoreClock / 1000000);
+            while ((int32_t)(DWT->CYCCNT) - start < cycles)
+              ;
             HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_RESET);
           }
         }
