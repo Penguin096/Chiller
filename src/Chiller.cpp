@@ -618,19 +618,29 @@ void HAL_UART_IRQHandler(UART_HandleTypeDef *huart)
           if (send)
           {
             HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_SET);
+            int32_t start = DWT->CYCCNT;
+            int32_t cycles = 63 * (SystemCoreClock / 1000000);
+
+              while ((int32_t)(DWT->CYCCNT) - start < cycles)
+                ;
             for (uint8_t i = 0; i < sizeof(SendArr); i++)
             {
-              while ((USART1->SR & USART_SR_TXE) == 0)
+              while ((USART1->SR & USART_SR_TXE) == 0) {}
                 ;                      // ждем опустошения буфера
               USART1->DR = SendArr[i]; // отправляем байт
               // SendArr[i] = 0;    // сразу же чистим переменную
             }
-            while ((USART1->SR & USART_SR_TXE) == 0)
+            while ((USART1->SR & USART_SR_TXE) == 0) {}
               ; // ждем опустошения буфера
-            for (int i = 0; i < 1000; i++)
-            {
-              asm("NOP");
-            }
+            // for (int i = 0; i < 1000; i++) //62.5 uS
+            // {
+            //   asm("NOP");
+            // }
+              start = DWT->CYCCNT;
+              cycles = 63 * (SystemCoreClock / 1000000);
+
+              while ((int32_t)(DWT->CYCCNT) - start < cycles)
+                ;
             HAL_GPIO_WritePin(RS_DIR_GPIO_Port, RS_DIR_Pin, GPIO_PIN_RESET);
           }
         }
@@ -1640,21 +1650,21 @@ void setup()
 // Serial.print(',');
 // Serial.println();
 #ifdef STM32F103xB
-      ADC_ChannelConfTypeDef sConfig;
+      // ADC_ChannelConfTypeDef sConfig;
 
-      sConfig.Channel = ADC_CHANNEL_VREFINT;
-      sConfig.Rank = ADC_REGULAR_RANK_1;
-      sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
-      if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
-      {
-        Error_Handler();
-      }
-      HAL_ADC_Start(&hadc1);
-      HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
-      adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
-      HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
-      Serial.println(3.290 / 4095.0 * adc, 3);
-      Serial.println(ADC_REF / adc * 4095.0, 3);
+      // sConfig.Channel = ADC_CHANNEL_VREFINT;
+      // sConfig.Rank = ADC_REGULAR_RANK_1;
+      // sConfig.SamplingTime = ADC_SAMPLETIME_239CYCLES_5;
+      // if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
+      // {
+      //   Error_Handler();
+      // }
+      // HAL_ADC_Start(&hadc1);
+      // HAL_ADC_PollForConversion(&hadc1, 100);   // ожидаем окончания преобразования
+      // adc = (uint32_t)HAL_ADC_GetValue(&hadc1); // читаем полученное значение в переменную adc
+      // HAL_ADC_Stop(&hadc1);                     // останавливаем АЦП (не обязательно)
+      // Serial.println(3.290 / 4095.0 * adc, 3);
+      // Serial.println(ADC_REF / adc * 4095.0, 3);
       // HAL_StatusTypeDef ret;
       // for (int i = 1; i < 128; i++)
       // {
